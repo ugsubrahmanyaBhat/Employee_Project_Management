@@ -27,7 +27,7 @@ export const fetchEmployees = createAsyncThunk(
       
       return formattedData;
     } catch (error) {
-      return rejectWithValue(error.message || "Failed to fetch employees");
+      return rejectWithValue("Failed to fetch employees");
     }
   }
 );
@@ -42,7 +42,7 @@ export const fetchProjects = createAsyncThunk(
       if (error) throw error;
       return data;
     } catch (error) {
-      return rejectWithValue(error.message || "Failed to fetch projects");
+      return rejectWithValue("Failed to fetch projects");
     }
   }
 );

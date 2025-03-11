@@ -14,86 +14,42 @@ import {
 
 export default function Projects() {
   const dispatch = useDispatch();
-  const { projects, employees, loading, error, successMessage, searchResults, isSearching } = useSelector(state => state.projects);
+  const { 
+    projects = [],
+    employees = [],
+    searchResults,
+    loading, 
+    error, 
+    successMessage
+  } = useSelector(state => state.projects);
   
   const [selectedProject, setSelectedProject] = useState(null);
-  const [showAssignModal, setShowAssignModal] = useState(false);
-  const [selectedEmployees, setSelectedEmployees] = useState([]);
   const [showOptions, setShowOptions] = useState(null);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editedProjectName, setEditedProjectName] = useState("");
-  const [showRemoveModal, setShowRemoveModal] = useState(false);
-  const [employeesToRemove, setEmployeesToRemove] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [formData, setFormData] = useState({ 
+    name: "", 
+    selected: [], 
+    removeSelected: [] 
+  });
 
   useEffect(() => {
     dispatch(fetchProjectsAsync());
     dispatch(fetchEmployeesAsync());
   }, [dispatch]);
 
-  function toggleOptions(projectId) {
-    setShowOptions(showOptions === projectId ? null : projectId);
-  }
+  useEffect(() => {
+    if (successMessage || error) {
+      const timer = setTimeout(() => {
+        dispatch(resetSearch());
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage, error, dispatch]);
 
-  function openAssignModal(project) {
-    setSelectedProject(project);
-    setSelectedEmployees(project.employees.map(e => e.id));
-    setShowAssignModal(true);
-    setShowOptions(null);
-  }
-
-  function openEditModal(project) {
-    setSelectedProject(project);
-    setEditedProjectName(project.name);
-    setShowEditModal(true);
-    setShowOptions(null);
-  }
-
-  function openRemoveModal(project) {
-    setSelectedProject(project);
-    setEmployeesToRemove([]);
-    setShowRemoveModal(true);
-    setShowOptions(null);
-  }
-
-  function handleDeleteProject(id) {
-    dispatch(deleteProjectAsync(id));
-  }
-
-  function handleAssignEmployees() {
-    if (!selectedProject) return;
-
-    dispatch(assignEmployeesAsync({
-      projectId: selectedProject.id,
-      employeeIds: selectedEmployees
-    }));
-    
-    setShowAssignModal(false);
-  }
-
-  function handleUpdateProject() {
-    if (!selectedProject) return;
-
-    dispatch(updateProjectAsync({
-      projectId: selectedProject.id,
-      name: editedProjectName
-    }));
-    
-    setShowEditModal(false);
-  }
-
-  function handleRemoveEmployees() {
-    if (!selectedProject) return;
-
-    dispatch(removeEmployeesAsync({
-      projectId: selectedProject.id,
-      employeeIdsToRemove: employeesToRemove
-    }));
-    
-    setShowRemoveModal(false);
-  }
-
-  function handleSearch(e) {
+  const handleSearch = (e) => {
     const value = e.target.value;
     setSearchTerm(value);
     
@@ -102,18 +58,15 @@ export default function Projects() {
     } else {
       dispatch(resetSearch());
     }
-  }
+  };
 
-  // Determine which projects to display
   const displayProjects = searchTerm.trim() ? searchResults : projects;
 
   return (
     <div className="p-6 bg-[#0f0f0f] min-h-screen">
       <nav className="flex justify-between bg-gradient-to-r from-blue-600 to-cyan-600 p-4 text-white rounded-xl shadow-xl">
         <Link to="/Dashboard" className="hover:opacity-80 transition-opacity flex items-center space-x-2">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-          </svg>
+          <span>🏠</span>
           <span>Home</span>
         </Link>
         <Link to="/Projects/add" className="bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg transition-all flex items-center space-x-2">
@@ -122,133 +75,136 @@ export default function Projects() {
         </Link>
       </nav>
 
-      {/* Search bar */}
-      <div className="mt-6 mb-6">
-        <input
-          type="text"
-          placeholder="Search projects..."
-          value={searchTerm}
-          onChange={handleSearch}
-          className="w-full bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-        />
+      {/* Search Bar */}
+      <div className="mt-6">
+        <form onSubmit={(e) => e.preventDefault()} className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Search projects..."
+            value={searchTerm}
+            onChange={handleSearch}
+            className="w-full bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm("");
+                dispatch(resetSearch());
+              }}
+              className="bg-[#2d2d2d] hover:bg-[#3d3d3d] text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              Clear
+            </button>
+          )}
+        </form>
       </div>
 
-      {/* Loading and error messages */}
-      {loading && <div className="text-center my-8 text-gray-400">Loading projects...</div>}
-      {error && <div className="bg-red-900/50 text-red-200 p-4 rounded-lg mb-6">{error}</div>}
-      {successMessage && <div className="bg-green-900/50 text-green-200 p-4 rounded-lg mb-6">{successMessage}</div>}
-      
-      {/* No results message */}
-      {!loading && displayProjects.length === 0 && (
-        <div className="text-center my-8 text-gray-400">
-          {searchTerm.trim() ? "No projects match your search." : "No projects found. Create your first project!"}
+      {/* Status Messages */}
+      {(successMessage || error) && (
+        <div className={`mt-4 p-3 rounded-lg ${successMessage ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+          {successMessage || error}
         </div>
       )}
 
+      {/* Loading Indicator */}
+      {loading && (
+        <div className="mt-8 flex justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
+        </div>
+      )}
+
+      {/* Projects Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
         {displayProjects.map((project) => (
           <div key={project.id} className="bg-[#181818] p-6 rounded-2xl shadow-2xl border border-[#2d2d2d] relative hover:border-cyan-500 transition-all">
             <h3 className="text-xl font-bold text-white mb-2">{project.name}</h3>
-            <p className="text-gray-400 text-sm">
-              Employees: {project.employees.map(e => e.name).join(", ") || 'None assigned'}
+            <p className="text-gray-400 text-sm mb-4">
+              Employees: {project.employees?.map(e => e.name).join(", ") || 'None assigned'}
             </p>
             
-            <button
-              onClick={() => toggleOptions(project.id)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-cyan-400 transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
-              </svg>
-            </button>
-
-            {showOptions === project.id && (
-              <div className="absolute right-4 top-12 bg-[#2d2d2d] shadow-xl rounded-xl p-2 w-48 z-10 border border-[#3d3d3d]">
-                <button onClick={() => openAssignModal(project)} className="w-full text-left  px-4 py-3 hover:bg-[#3d3d3d] rounded-lg flex items-center space-x-2">
-                  <span>👥</span>
-                  <span className="text-white">Assign</span>
-                </button>
-                <button onClick={() => openEditModal(project)} className="w-full text-left px-4 py-3 hover:bg-[#3d3d3d] rounded-lg flex items-center space-x-2">
-                  <span>✏️</span>
-                  <span className="text-white">Edit</span>
-                </button>
-                <button onClick={() => openRemoveModal(project)} className="w-full text-left px-4 py-3 hover:bg-[#3d3d3d] rounded-lg flex items-center space-x-2">
-                  <span>❌</span>
-                  <span className="text-white">Remove Access</span>
-                </button>
-                <button onClick={() => handleDeleteProject(project.id)} className="w-full text-left px-4 py-3 text-red-400 hover:bg-[#3d3d3d] rounded-lg flex items-center space-x-2">
-                  <span>🗑</span>
-                  <span className="text-white">Delete</span>
-                </button>
-              </div>
-            )}
+            {/* Action Buttons */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  setSelectedProject(project);
+                  setFormData({...formData, name: project.name});
+                  setShowEditModal(true);
+                }}
+                className="text-white bg-blue-500 hover:bg-blue-700 px-4 py-2 rounded-lg"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedProject(project);
+                  setFormData({...formData, selected: project.employees?.map(e => e.id) || []});
+                  setShowAssignModal(true);
+                }}
+                className="text-white bg-green-500 hover:bg-green-700 px-4 py-2 rounded-lg"
+              >
+                Assign
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedProject(project);
+                  setShowRemoveModal(true);
+                }}
+                className="text-white bg-yellow-500 hover:bg-yellow-700 px-4 py-2 rounded-lg"
+              >
+                Remove
+              </button>
+              <button
+                onClick={() => {
+                  if (window.confirm("Are you sure you want to delete this project?")) {
+                    dispatch(deleteProjectAsync(project.id));
+                  }
+                }}
+                className="text-white bg-red-500 hover:bg-red-700 px-4 py-2 rounded-lg"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         ))}
       </div>
 
-      {showAssignModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d2d] shadow-2xl">
-            <h2 className="text-2xl font-bold text-white mb-6">Assign Employees to {selectedProject?.name}</h2>
-            <div className="space-y-4 max-h-60 overflow-y-auto">
-              {employees.map((employee) => (
-                <label key={employee.id} className="flex items-center space-x-3 p-3 hover:bg-[#2d2d2d] rounded-lg cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="w-5 h-5 text-cyan-500 bg-transparent border-2 border-[#3d3d3d] rounded focus:ring-cyan-500"
-                    checked={selectedEmployees.includes(employee.id)}
-                    onChange={(e) => {
-                      const updated = e.target.checked
-                        ? [...selectedEmployees, employee.id]
-                        : selectedEmployees.filter(id => id !== employee.id);
-                      setSelectedEmployees(updated);
-                    }}
-                  />
-                  <span className="text-white">{employee.name}</span>
-                </label>
-              ))}
-            </div>
-            <div className="mt-8 flex gap-4">
-              <button 
-                onClick={handleAssignEmployees}
-                className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg transition-colors"
-                disabled={loading}
-              >
-                {loading ? "Saving..." : "Save Changes"}
-              </button>
-              <button 
-                onClick={() => setShowAssignModal(false)}
-                className="flex-1 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-white px-6 py-3 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+      {/* Empty State */}
+      {!loading && displayProjects.length === 0 && (
+        <div className="text-center mt-8 p-6 bg-[#181818] rounded-2xl">
+          <p className="text-gray-400">
+            {searchTerm ? "No matching projects found" : "No projects available"}
+          </p>
         </div>
       )}
 
+      {/* Edit Project Modal */}
       {showEditModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d2d] shadow-2xl">
             <h2 className="text-2xl font-bold text-white mb-6">Edit Project</h2>
             <input
               type="text"
-              value={editedProjectName}
-              onChange={(e) => setEditedProjectName(e.target.value)}
-              className="w-full bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              placeholder="Project name"
+              value={formData.name}
+              onChange={(e) => setFormData({...formData, name: e.target.value})}
+              className="w-full bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 mb-4"
             />
-            <div className="mt-8 flex gap-4">
-              <button 
-                onClick={handleUpdateProject}
-                className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg transition-colors"
-                disabled={loading || !editedProjectName.trim()}
+            <div className="flex gap-4">
+              <button
+                onClick={() => {
+                  dispatch(updateProjectAsync({
+                    projectId: selectedProject.id,
+                    name: formData.name
+                  }));
+                  setShowEditModal(false);
+                }}
+                className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg"
               >
-                {loading ? "Saving..." : "Save Changes"}
+                Save
               </button>
-              <button 
+              <button
                 onClick={() => setShowEditModal(false)}
-                className="flex-1 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-white px-6 py-3 rounded-lg transition-colors"
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg"
               >
                 Cancel
               </button>
@@ -257,39 +213,92 @@ export default function Projects() {
         </div>
       )}
 
+      {/* Assign Employee Modal */}
+      {showAssignModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d2d] shadow-2xl">
+            <h2 className="text-2xl font-bold text-white mb-6">Assign Employees to {selectedProject?.name}</h2>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {employees.map(employee => (
+                <label key={employee.id} className="flex items-center space-x-3 p-3 hover:bg-[#2d2d2d] rounded-lg cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.selected.includes(employee.id)}
+                    onChange={(e) => {
+                      const updated = e.target.checked
+                        ? [...formData.selected, employee.id]
+                        : formData.selected.filter(id => id !== employee.id);
+                      setFormData({...formData, selected: updated});
+                    }}
+                    className="w-5 h-5 text-cyan-500 bg-transparent border-2 border-[#3d3d3d] rounded"
+                  />
+                  <span className="text-white">{employee.name}</span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-6 flex gap-4">
+              <button
+                onClick={() => {
+                  dispatch(assignEmployeesAsync({
+                    projectId: selectedProject.id,
+                    employeeIds: formData.selected
+                  }));
+                  setShowAssignModal(false);
+                }}
+                className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setShowAssignModal(false)}
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Employee Modal */}
       {showRemoveModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d2d] shadow-2xl">
-            <h2 className="text-2xl font-bold text-white mb-6">Remove Access from {selectedProject?.name}</h2>
-            <div className="space-y-4 max-h-60 overflow-y-auto">
-            {selectedProject?.employees?.map((emp) => (
-  <label key={emp.id} className="flex items-center space-x-3 p-3 hover:bg-[#2d2d2d] rounded-lg cursor-pointer">
-    <input
-      type="checkbox"
-      className="w-5 h-5 text-cyan-500 bg-transparent border-2 border-[#3d3d3d] rounded focus:ring-cyan-500"
-      checked={employeesToRemove.includes(emp.id)}
-      onChange={(e) => {
-        const updatedList = e.target.checked
-          ? [...employeesToRemove, emp.id]
-          : employeesToRemove.filter(id => id !== emp.id);
-        setEmployeesToRemove(updatedList);
-      }}
-    />
-    <span className="text-white">{emp.name}</span>
-  </label>
-))}
+            <h2 className="text-2xl font-bold text-white mb-6">Remove Employees from {selectedProject?.name}</h2>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {selectedProject?.employees?.map(employee => (
+                <label key={employee.id} className="flex items-center space-x-3 p-3 hover:bg-[#2d2d2d] rounded-lg cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.removeSelected.includes(employee.id)}
+                    onChange={(e) => {
+                      const updated = e.target.checked
+                        ? [...formData.removeSelected, employee.id]
+                        : formData.removeSelected.filter(id => id !== employee.id);
+                      setFormData({...formData, removeSelected: updated});
+                    }}
+                    className="w-5 h-5 text-red-500 bg-transparent border-2 border-[#3d3d3d] rounded"
+                  />
+                  <span className="text-white">{employee.name}</span>
+                </label>
+              ))}
             </div>
-            <div className="mt-8 flex gap-4">
-              <button 
-                onClick={handleRemoveEmployees}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg transition-colors"
-                disabled={loading || employeesToRemove.length === 0}
+            <div className="mt-6 flex gap-4">
+              <button
+                onClick={() => {
+                  dispatch(removeEmployeesAsync({
+                    projectId: selectedProject.id,
+                    employeeIdsToRemove: formData.removeSelected
+                  }));
+                  setShowRemoveModal(false);
+                }}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg"
               >
-                {loading ? "Removing..." : "Remove Selected"}
+                Remove
               </button>
-              <button 
+              <button
                 onClick={() => setShowRemoveModal(false)}
-                className="flex-1 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-white px-6 py-3 rounded-lg transition-colors"
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg"
               >
                 Cancel
               </button>
