@@ -1,11 +1,21 @@
-// Projects.jsx
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { supabase } from "../supabase/SupabaseClient";
+import { useSelector, useDispatch } from "react-redux";
+import {
+  fetchProjectsAsync,
+  fetchEmployeesAsync,
+  deleteProjectAsync,
+  updateProjectAsync,
+  assignEmployeesAsync,
+  removeEmployeesAsync,
+  searchProjectsAsync,
+  resetSearch
+} from "../features/projectSlice.js";
 
 export default function Projects() {
-  const [projects, setProjects] = useState([]);
-  const [employees, setEmployees] = useState([]);
+  const dispatch = useDispatch();
+  const { projects, employees, loading, error, successMessage, searchResults, isSearching } = useSelector(state => state.projects);
+  
   const [selectedProject, setSelectedProject] = useState(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedEmployees, setSelectedEmployees] = useState([]);
@@ -14,66 +24,12 @@ export default function Projects() {
   const [editedProjectName, setEditedProjectName] = useState("");
   const [showRemoveModal, setShowRemoveModal] = useState(false);
   const [employeesToRemove, setEmployeesToRemove] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
-    fetchProjects();
-    fetchEmployees();
-  }, []);
-
-  async function fetchProjects() {
-    const { data, error } = await supabase
-      .from("Projects")
-      .select("id, name, project_employee ( emp_id, Employee ( id, name ) )");
-
-    if (error) {
-      console.error("Error fetching projects:", error);
-    } else {
-      const formattedData = data.map((project) => ({
-        ...project,
-        employees: project.project_employee.map(pe => pe.Employee) || [],
-      }));
-      setProjects(formattedData);
-    }
-  }
-
-  async function fetchEmployees() {
-    const { data, error } = await supabase.from("Employee").select("id, name");
-
-    if (error) {
-      console.error("Error fetching employees:", error);
-    } else {
-      setEmployees(data);
-    }
-  }
-
-  async function deleteProject(id) {
-    await supabase.from("Projects").delete().eq("id", id);
-    await supabase.from("project_employee").delete().eq("project_id", id);
-    fetchProjects();
-  }
-
-  async function assignEmployees() {
-    if (!selectedProject) return;
-
-    await supabase.from("project_employee").delete().eq("project_id", selectedProject.id);
-    await supabase.from("project_employee").insert(
-      selectedEmployees.map(empId => ({ project_id: selectedProject.id, emp_id: empId }))
-    );
-
-    setShowAssignModal(false);
-    fetchProjects();
-  }
-
-  async function removeEmployees() {
-    if (!selectedProject) return;
-
-    await supabase.from("project_employee").delete()
-      .match({ project_id: selectedProject.id })
-      .in("emp_id", employeesToRemove);
-
-    setShowRemoveModal(false);
-    fetchProjects();
-  }
+    dispatch(fetchProjectsAsync());
+    dispatch(fetchEmployeesAsync());
+  }, [dispatch]);
 
   function toggleOptions(projectId) {
     setShowOptions(showOptions === projectId ? null : projectId);
@@ -100,14 +56,56 @@ export default function Projects() {
     setShowOptions(null);
   }
 
-  async function updateProject() {
+  function handleDeleteProject(id) {
+    dispatch(deleteProjectAsync(id));
+  }
+
+  function handleAssignEmployees() {
     if (!selectedProject) return;
 
-    await supabase.from("Projects").update({ name: editedProjectName }).eq("id", selectedProject.id);
+    dispatch(assignEmployeesAsync({
+      projectId: selectedProject.id,
+      employeeIds: selectedEmployees
+    }));
+    
+    setShowAssignModal(false);
+  }
+
+  function handleUpdateProject() {
+    if (!selectedProject) return;
+
+    dispatch(updateProjectAsync({
+      projectId: selectedProject.id,
+      name: editedProjectName
+    }));
     
     setShowEditModal(false);
-    fetchProjects();
   }
+
+  function handleRemoveEmployees() {
+    if (!selectedProject) return;
+
+    dispatch(removeEmployeesAsync({
+      projectId: selectedProject.id,
+      employeeIdsToRemove: employeesToRemove
+    }));
+    
+    setShowRemoveModal(false);
+  }
+
+  function handleSearch(e) {
+    const value = e.target.value;
+    setSearchTerm(value);
+    
+    if (value.trim()) {
+      dispatch(searchProjectsAsync(value));
+    } else {
+      dispatch(resetSearch());
+    }
+  }
+
+  // Determine which projects to display
+  const displayProjects = searchTerm.trim() ? searchResults : projects;
 
   return (
     <div className="p-6 bg-[#0f0f0f] min-h-screen">
@@ -124,8 +122,31 @@ export default function Projects() {
         </Link>
       </nav>
 
+      {/* Search bar */}
+      <div className="mt-6 mb-6">
+        <input
+          type="text"
+          placeholder="Search projects..."
+          value={searchTerm}
+          onChange={handleSearch}
+          className="w-full bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+        />
+      </div>
+
+      {/* Loading and error messages */}
+      {loading && <div className="text-center my-8 text-gray-400">Loading projects...</div>}
+      {error && <div className="bg-red-900/50 text-red-200 p-4 rounded-lg mb-6">{error}</div>}
+      {successMessage && <div className="bg-green-900/50 text-green-200 p-4 rounded-lg mb-6">{successMessage}</div>}
+      
+      {/* No results message */}
+      {!loading && displayProjects.length === 0 && (
+        <div className="text-center my-8 text-gray-400">
+          {searchTerm.trim() ? "No projects match your search." : "No projects found. Create your first project!"}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
-        {projects.map((project) => (
+        {displayProjects.map((project) => (
           <div key={project.id} className="bg-[#181818] p-6 rounded-2xl shadow-2xl border border-[#2d2d2d] relative hover:border-cyan-500 transition-all">
             <h3 className="text-xl font-bold text-white mb-2">{project.name}</h3>
             <p className="text-gray-400 text-sm">
@@ -155,7 +176,7 @@ export default function Projects() {
                   <span>❌</span>
                   <span className="text-white">Remove Access</span>
                 </button>
-                <button onClick={() => deleteProject(project.id)} className="w-full text-left px-4 py-3 text-red-400 hover:bg-[#3d3d3d] rounded-lg flex items-center space-x-2">
+                <button onClick={() => handleDeleteProject(project.id)} className="w-full text-left px-4 py-3 text-red-400 hover:bg-[#3d3d3d] rounded-lg flex items-center space-x-2">
                   <span>🗑</span>
                   <span className="text-white">Delete</span>
                 </button>
@@ -189,10 +210,11 @@ export default function Projects() {
             </div>
             <div className="mt-8 flex gap-4">
               <button 
-                onClick={assignEmployees}
+                onClick={handleAssignEmployees}
                 className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg transition-colors"
+                disabled={loading}
               >
-                Save Changes
+                {loading ? "Saving..." : "Save Changes"}
               </button>
               <button 
                 onClick={() => setShowAssignModal(false)}
@@ -218,10 +240,11 @@ export default function Projects() {
             />
             <div className="mt-8 flex gap-4">
               <button 
-                onClick={updateProject}
+                onClick={handleUpdateProject}
                 className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg transition-colors"
+                disabled={loading || !editedProjectName.trim()}
               >
-                Save Changes
+                {loading ? "Saving..." : "Save Changes"}
               </button>
               <button 
                 onClick={() => setShowEditModal(false)}
@@ -239,29 +262,30 @@ export default function Projects() {
           <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d2d] shadow-2xl">
             <h2 className="text-2xl font-bold text-white mb-6">Remove Access from {selectedProject?.name}</h2>
             <div className="space-y-4 max-h-60 overflow-y-auto">
-              {selectedProject?.employees.map((emp) => (
-                <label key={emp.id} className="flex items-center space-x-3 p-3 hover:bg-[#2d2d2d] rounded-lg cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="w-5 h-5 text-cyan-500 bg-transparent border-2 border-[#3d3d3d] rounded focus:ring-cyan-500"
-                    checked={employeesToRemove.includes(emp.id)}
-                    onChange={(e) => {
-                      const updatedList = e.target.checked
-                        ? [...employeesToRemove, emp.id]
-                        : employeesToRemove.filter(id => id !== emp.id);
-                      setEmployeesToRemove(updatedList);
-                    }}
-                  />
-                  <span className="text-white">{emp.name}</span>
-                </label>
-              ))}
+            {selectedProject?.employees?.map((emp) => (
+  <label key={emp.id} className="flex items-center space-x-3 p-3 hover:bg-[#2d2d2d] rounded-lg cursor-pointer">
+    <input
+      type="checkbox"
+      className="w-5 h-5 text-cyan-500 bg-transparent border-2 border-[#3d3d3d] rounded focus:ring-cyan-500"
+      checked={employeesToRemove.includes(emp.id)}
+      onChange={(e) => {
+        const updatedList = e.target.checked
+          ? [...employeesToRemove, emp.id]
+          : employeesToRemove.filter(id => id !== emp.id);
+        setEmployeesToRemove(updatedList);
+      }}
+    />
+    <span className="text-white">{emp.name}</span>
+  </label>
+))}
             </div>
             <div className="mt-8 flex gap-4">
               <button 
-                onClick={removeEmployees}
+                onClick={handleRemoveEmployees}
                 className="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg transition-colors"
+                disabled={loading || employeesToRemove.length === 0}
               >
-                Remove Selected
+                {loading ? "Removing..." : "Remove Selected"}
               </button>
               <button 
                 onClick={() => setShowRemoveModal(false)}

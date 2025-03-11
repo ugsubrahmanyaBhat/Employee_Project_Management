@@ -23,7 +23,7 @@ export default function Dashboard() {
     return (
         <div className="min-h-screen bg-[#0f0f0f] flex flex-col">
             {/* Header */}
-            <header className="bg-gradient-to-r from-[#1a1a1a] to-[#2d2d2d] text-white p-4 shadow-xl">
+            <header className="bg-gradient-to-r from-[#1a1a1a] to-[#2d2d2d] text-white p-2 shadow-xl">
                 <div className="container mx-auto flex justify-between items-center">
                     <div className="flex items-center space-x-4">
                         <button 

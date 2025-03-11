@@ -1,76 +1,85 @@
 // Employee.jsx
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { supabase } from "../supabase/SupabaseClient";
+import { useDispatch, useSelector } from "react-redux";
+import { 
+  fetchEmployees, 
+  fetchProjects, 
+  deleteEmployee,
+  updateEmployee,
+  assignProjects,
+  removeProjects,
+  setSelectedEmployee,
+  setShowEditForm,
+  setShowAssignForm,
+  setShowRemoveForm,
+  searchEmployees,
+  clearMessages
+} from  "../features/employeeSlice.js";
 
 export default function Employee() {
-  const [employees, setEmployees] = useState([]);
-  const [selectedEmployee, setSelectedEmployee] = useState(null);
-  const [showEditForm, setShowEditForm] = useState(false);
-  const [showAssignForm, setShowAssignForm] = useState(false);
-  const [showRemoveForm, setShowRemoveForm] = useState(false);
+  const dispatch = useDispatch();
+  const { 
+    employees, 
+    projects, 
+    selectedEmployee, 
+    loading, 
+    error, 
+    successMessage,
+    showEditForm,
+    showAssignForm,
+    showRemoveForm
+  } = useSelector(state => state.employees);
   const [showOptions, setShowOptions] = useState(null);
-  const [projects, setProjects] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
-    fetchEmployees();
-    fetchProjects();
-  }, []);
+    dispatch(fetchEmployees());
+    dispatch(fetchProjects());
+  }, [dispatch]);
 
-  async function fetchEmployees() {
-    const { data, error } = await supabase
-      .from("Employee")
-      .select(`
-        id, 
-        name, 
-        project_employee (
-          project_id, 
-          Projects ( id, name )
-        )
-      `);
-
-    if (error) {
-      console.error("Error fetching employees:", error);
-    } else {
-      const formattedData = data.map((employee) => ({
-        ...employee,
-        projects: employee.project_employee.map(pe => pe.Projects) || [],
-      }));
-      setEmployees(formattedData);
+  useEffect(() => {
+    // Clear messages after 3 seconds
+    if (successMessage || error) {
+      const timer = setTimeout(() => {
+        dispatch(clearMessages());
+      }, 3000);
+      return () => clearTimeout(timer);
     }
-  }
+  }, [successMessage, error, dispatch]);
 
-  async function fetchProjects() {
-    const { data, error } = await supabase.from("Projects").select("id, name");
-    if (error) {
-      console.error("Error fetching projects:", error);
+  function handleSearch(e) {
+    e.preventDefault();
+    if (searchTerm.trim()) {
+      dispatch(searchEmployees(searchTerm));
     } else {
-      setProjects(data);
+      dispatch(fetchEmployees());
     }
-  }
-
-  async function deleteEmployee(id) {
-    await supabase.from("Employee").delete().eq("id", id);
-    await supabase.from("project_employee").delete().eq("emp_id", id);
-    fetchEmployees();
   }
 
   function handleEdit(employee) {
-    setSelectedEmployee(employee);
-    setShowEditForm(true);
+    dispatch(setSelectedEmployee(employee));
+    dispatch(setShowEditForm(true));
     setShowOptions(null);
   }
 
   function handleAssign(employee) {
-    setSelectedEmployee(employee);
-    setShowAssignForm(true);
+    dispatch(setSelectedEmployee(employee));
+    dispatch(setShowAssignForm(true));
     setShowOptions(null);
   }
 
   function handleRemove(employee) {
-    setSelectedEmployee(employee);
-    setShowRemoveForm(true);
+    dispatch(setSelectedEmployee(employee));
+    dispatch(setShowRemoveForm(true));
     setShowOptions(null);
+  }
+
+  function handleDelete(id) {
+    if (window.confirm("Are you sure you want to delete this employee?")) {
+      dispatch(deleteEmployee(id));
+      setShowOptions(null);
+    }
   }
 
   function toggleOptions(employeeId) {
@@ -92,6 +101,52 @@ export default function Employee() {
         </Link>
       </nav>
 
+      {/* Search bar */}
+      <div className="mt-6">
+        <form onSubmit={handleSearch} className="flex gap-2">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search employees..."
+            className="w-full bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          />
+          <button
+            type="submit"
+            className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            Search
+          </button>
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm("");
+                dispatch(fetchEmployees());
+              }}
+              className="bg-[#2d2d2d] hover:bg-[#3d3d3d] text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              Clear
+            </button>
+          )}
+        </form>
+      </div>
+
+      {/* Status messages */}
+      {(successMessage || error) && (
+        <div className={`mt-4 p-3 rounded-lg ${successMessage ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+          {successMessage || error}
+        </div>
+      )}
+
+      {/* Loading indicator */}
+      {loading && (
+        <div className="mt-8 flex justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
+        </div>
+      )}
+
+      {/* Employees grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
         {employees.map((employee) => (
           <div key={employee.id} className="bg-[#181818] p-6 rounded-2xl shadow-2xl border border-[#2d2d2d] relative hover:border-cyan-500 transition-all">
@@ -115,7 +170,7 @@ export default function Employee() {
                   <span>✏️</span>
                   <span>Edit</span>
                 </button>
-                <button onClick={() => handleAssign(employee)} className="w-full text-left  text-white px-4 py-3 hover:bg-[#3d3d3d] rounded-lg flex items-center space-x-2">
+                <button onClick={() => handleAssign(employee)} className="w-full text-left text-white px-4 py-3 hover:bg-[#3d3d3d] rounded-lg flex items-center space-x-2">
                   <span>📌</span>
                   <span>Assign</span>
                 </button>
@@ -123,7 +178,7 @@ export default function Employee() {
                   <span>❌</span>
                   <span>Remove Access</span>
                 </button>
-                <button onClick={() => deleteEmployee(employee.id)} className="w-ful text-left px-4 py-3 text-red-400 hover:bg-[#3d3d3d] rounded-lg flex items-center space-x-2">
+                <button onClick={() => handleDelete(employee.id)} className="w-full text-left px-4 py-3 text-red-400 hover:bg-[#3d3d3d] rounded-lg flex items-center space-x-2">
                   <span>🗑</span>
                   <span className="text-white">Delete</span>
                 </button>
@@ -133,68 +188,49 @@ export default function Employee() {
         ))}
       </div>
 
-      {showEditForm && (
-        <EditEmployeeForm 
-          employee={selectedEmployee} 
-          closeForm={() => setShowEditForm(false)} 
-          refresh={fetchEmployees} 
-        />
+      {/* No employees found message */}
+      {!loading && employees.length === 0 && (
+        <div className="text-center mt-8 p-6 bg-[#181818] rounded-2xl">
+          <p className="text-gray-400">No employees found</p>
+        </div>
       )}
 
-      {showAssignForm && (
-        <AssignProjectForm 
-          employee={selectedEmployee} 
-          closeForm={() => setShowAssignForm(false)} 
-          refresh={fetchEmployees} 
-          projects={projects}
-        />
-      )}
-
-      {showRemoveForm && (
-        <RemoveProjectForm 
-          employee={selectedEmployee} 
-          closeForm={() => setShowRemoveForm(false)} 
-          refresh={fetchEmployees}
-        />
-      )}
+      {/* Forms */}
+      {showEditForm && <EditEmployeeForm />}
+      {showAssignForm && <AssignProjectForm />}
+      {showRemoveForm && <RemoveProjectForm />}
     </div>
   );
 }
 
-function AssignProjectForm({ employee, closeForm, refresh, projects }) {
+function AssignProjectForm() {
+  const dispatch = useDispatch();
+  const { selectedEmployee, projects } = useSelector(state => state.employees);
   const [selectedProjects, setSelectedProjects] = useState([]);
 
   useEffect(() => {
-    if (employee?.projects) {
-      setSelectedProjects(employee.projects.map(p => p.id));
+    if (selectedEmployee?.projects) {
+      setSelectedProjects(selectedEmployee.projects.map(p => p.id));
     }
-  }, [employee]);
+  }, [selectedEmployee]);
 
-  async function assignProjects() {
-    const { error } = await supabase
-      .from("project_employee")
-      .delete()
-      .eq("emp_id", employee.id);
-
-    if (!error) {
-      const { error: insertError } = await supabase
-        .from("project_employee")
-        .insert(selectedProjects.map(projectId => ({
-          emp_id: employee.id,
-          project_id: projectId
-        })));
-
-      if (!insertError) {
-        refresh();
-        closeForm();
-      }
-    }
+  function handleAssignProjects() {
+    dispatch(assignProjects({
+      employeeId: selectedEmployee.id,
+      projectIds: selectedProjects
+    }));
   }
+
+  function handleClose() {
+    dispatch(setShowAssignForm(false));
+  }
+
+  if (!selectedEmployee) return null;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d2d] shadow-2xl">
-        <h2 className="text-2xl font-bold text-white mb-6">Assign Projects to {employee?.name}</h2>
+        <h2 className="text-2xl font-bold text-white mb-6">Assign Projects to {selectedEmployee?.name}</h2>
         <div className="space-y-4 max-h-60 overflow-y-auto">
           {projects.map((project) => (
             <label key={project.id} className="flex items-center space-x-3 p-3 hover:bg-[#2d2d2d] rounded-lg cursor-pointer">
@@ -215,13 +251,13 @@ function AssignProjectForm({ employee, closeForm, refresh, projects }) {
         </div>
         <div className="mt-8 flex gap-4">
           <button 
-            onClick={assignProjects}
+            onClick={handleAssignProjects}
             className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg transition-colors"
           >
             Save Changes
           </button>
           <button 
-            onClick={closeForm}
+            onClick={handleClose}
             className="flex-1 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-white px-6 py-3 rounded-lg transition-colors"
           >
             Cancel
@@ -232,28 +268,30 @@ function AssignProjectForm({ employee, closeForm, refresh, projects }) {
   );
 }
 
-function RemoveProjectForm({ employee, closeForm, refresh }) {
+function RemoveProjectForm() {
+  const dispatch = useDispatch();
+  const { selectedEmployee } = useSelector(state => state.employees);
   const [selectedProjects, setSelectedProjects] = useState([]);
 
-  async function removeProjects() {
-    const { error } = await supabase
-      .from("project_employee")
-      .delete()
-      .in("project_id", selectedProjects)
-      .eq("emp_id", employee.id);
-
-    if (!error) {
-      refresh();
-      closeForm();
-    }
+  function handleRemoveProjects() {
+    dispatch(removeProjects({
+      employeeId: selectedEmployee.id,
+      projectIds: selectedProjects
+    }));
   }
+
+  function handleClose() {
+    dispatch(setShowRemoveForm(false));
+  }
+
+  if (!selectedEmployee) return null;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d2d] shadow-2xl">
-        <h2 className="text-2xl font-bold text-white mb-6">Remove Projects from {employee?.name}</h2>
+        <h2 className="text-2xl font-bold text-white mb-6">Remove Projects from {selectedEmployee?.name}</h2>
         <div className="space-y-4 max-h-60 overflow-y-auto">
-          {employee?.projects.map((project) => (
+          {selectedEmployee?.projects.map((project) => (
             <label key={project.id} className="flex items-center space-x-3 p-3 hover:bg-[#2d2d2d] rounded-lg cursor-pointer">
               <input
                 type="checkbox"
@@ -272,14 +310,14 @@ function RemoveProjectForm({ employee, closeForm, refresh }) {
         </div>
         <div className="mt-8 flex gap-4">
           <button 
-            onClick={removeProjects}
+            onClick={handleRemoveProjects}
             className="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg transition-colors"
           >
             Remove Selected
           </button>
           <button 
-            onClick={closeForm}
-            className="flex-1 bg-[#2d2d2d] hover:bg-[#5c4e4e] text-white px-6 py-3 rounded-lg transition-colors"
+            onClick={handleClose}
+            className="flex-1 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-white px-6 py-3 rounded-lg transition-colors"
           >
             Cancel
           </button>
@@ -289,20 +327,29 @@ function RemoveProjectForm({ employee, closeForm, refresh }) {
   );
 }
 
-function EditEmployeeForm({ employee, closeForm, refresh }) {
-  const [name, setName] = useState(employee?.name || "");
+function EditEmployeeForm() {
+  const dispatch = useDispatch();
+  const { selectedEmployee } = useSelector(state => state.employees);
+  const [name, setName] = useState("");
 
-  async function updateEmployee() {
-    const { error } = await supabase
-      .from("Employee")
-      .update({ name })
-      .eq("id", employee.id);
-
-    if (!error) {
-      refresh();
-      closeForm();
+  useEffect(() => {
+    if (selectedEmployee) {
+      setName(selectedEmployee.name);
     }
+  }, [selectedEmployee]);
+
+  function handleUpdateEmployee() {
+    dispatch(updateEmployee({
+      id: selectedEmployee.id,
+      name
+    }));
   }
+
+  function handleClose() {
+    dispatch(setShowEditForm(false));
+  }
+
+  if (!selectedEmployee) return null;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -317,13 +364,13 @@ function EditEmployeeForm({ employee, closeForm, refresh }) {
         />
         <div className="mt-8 flex gap-4">
           <button 
-            onClick={updateEmployee}
+            onClick={handleUpdateEmployee}
             className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg transition-colors"
           >
             Save Changes
           </button>
           <button 
-            onClick={closeForm}
+            onClick={handleClose}
             className="flex-1 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-white px-6 py-3 rounded-lg transition-colors"
           >
             Cancel
