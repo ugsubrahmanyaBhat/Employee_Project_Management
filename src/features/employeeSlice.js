@@ -1,49 +1,209 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { supabase } from "../supabase/SupabaseClient";
 
+// Async thunk for fetching employees
+export const fetchEmployeesAsync = createAsyncThunk(
+  "employees/fetchEmployeesAsync",
+  async (_, { rejectWithValue }) => {
+    try {
+      const { data, error } = await supabase
+        .from("Employee")
+        .select("id, name, project_employee ( project_id, Projects ( id, name ) )");
+      if (error) throw error;
+      const formattedData = data.map((employee) => ({
+        ...employee,
+        projects: employee.project_employee.map(pe => pe.Projects) || [],
+      }));
+      return formattedData;
+    } catch (error) {
+      return rejectWithValue(error.message || "Failed to fetch employees.");
+    }
+  }
+);
+
+// Async thunk for fetching projects
+export const fetchProjectsAsync = createAsyncThunk(
+  "employees/fetchProjectsAsync",
+  async (_, { rejectWithValue }) => {
+    try {
+      const { data, error } = await supabase
+        .from("Projects")
+        .select("id, name");
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      return rejectWithValue(error.message || "Failed to fetch projects.");
+    }
+  }
+);
+
+// Async thunk for adding an employee
+export const addEmployeeAsync = createAsyncThunk(
+  "employees/addEmployeeAsync",
+  async (employeeName, { rejectWithValue }) => {
+    try {
+      const { data, error } = await supabase
+        .from("Employee")
+        .insert([{ name: employeeName.trim() }])
+        .select();
+      if (error) throw error;
+      return data[0]; // Return the new employee
+    } catch (error) {
+      return rejectWithValue(error.message || "Failed to create employee.");
+    }
+  }
+);
+
+// Async thunk for deleting an employee
+export const deleteEmployeeAsync = createAsyncThunk(
+  "employees/deleteEmployeeAsync",
+  async (employeeId, { rejectWithValue }) => {
+    try {
+      // First delete related records from project_employee
+      const { error: relatedError } = await supabase
+        .from("project_employee")
+        .delete()
+        .eq("emp_id", employeeId);
+      if (relatedError) throw relatedError;
+      // Then delete the employee
+      const { error } = await supabase
+        .from("Employee")
+        .delete()
+        .eq("id", employeeId);
+      if (error) throw error;
+      return employeeId;
+    } catch (error) {
+      return rejectWithValue(error.message || "Failed to delete employee.");
+    }
+  }
+);
+
+// Async thunk for updating an employee
+export const updateEmployeeAsync = createAsyncThunk(
+  "employees/updateEmployeeAsync",
+  async ({ employeeId, name }, { rejectWithValue }) => {
+    try {
+      const { data, error } = await supabase
+        .from("Employee")
+        .update({ name: name.trim() })
+        .eq("id", employeeId)
+        .select();
+      if (error) throw error;
+      return data[0];
+    } catch (error) {
+      return rejectWithValue(error.message || "Failed to update employee.");
+    }
+  }
+);
+
+// Async thunk for assigning projects to an employee
+export const assignProjectsAsync = createAsyncThunk(
+  "employees/assignProjectsAsync",
+  async ({ employeeId, projectIds }, { rejectWithValue, dispatch }) => {
+    try {
+      // First delete existing assignments
+      const { error: deleteError } = await supabase
+        .from("project_employee")
+        .delete()
+        .eq("emp_id", employeeId);
+      if (deleteError) throw deleteError;
+      // Then create new assignments
+      if (projectIds.length > 0) {
+        const assignmentsToInsert = projectIds.map(projectId => ({
+          emp_id: employeeId,
+          project_id: projectId
+        }));
+        const { error: insertError } = await supabase
+          .from("project_employee")
+          .insert(assignmentsToInsert);
+        if (insertError) throw insertError;
+      }
+      // Fetch updated employee data
+      dispatch(fetchEmployeesAsync());
+      return { employeeId, projectIds };
+    } catch (error) {
+      return rejectWithValue(error.message || "Failed to assign projects.");
+    }
+  }
+);
+
+// Async thunk for removing projects from an employee
+export const removeProjectsAsync = createAsyncThunk(
+  "employees/removeProjectsAsync",
+  async ({ employeeId, projectIdsToRemove }, { rejectWithValue, dispatch }) => {
+    try {
+      const { error } = await supabase
+        .from("project_employee")
+        .delete()
+        .match({ emp_id: employeeId })
+        .in("project_id", projectIdsToRemove);
+      if (error) throw error;
+      // Fetch updated employee data
+      dispatch(fetchEmployeesAsync());
+      return { employeeId, projectIdsToRemove };
+    } catch (error) {
+      return rejectWithValue(error.message || "Failed to remove projects.");
+    }
+  }
+);
+
+// Async thunk for searching employees
+export const searchEmployeesAsync = createAsyncThunk(
+  "employees/searchEmployeesAsync",
+  async (searchTerm, { rejectWithValue }) => {
+    try {
+      const { data, error } = await supabase
+        .from("Employee")
+        .select("id, name, project_employee ( project_id, Projects ( id, name ) )")
+        .ilike("name", `%${searchTerm}%`);
+      if (error) throw error;
+      const formattedData = data.map((employee) => ({
+        ...employee,
+        projects: employee.project_employee.map(pe => pe.Projects) || [],
+      }));
+      return formattedData;
+    } catch (error) {
+      return rejectWithValue(error.message || "Failed to search employees.");
+    }
+  }
+);
+
+// Async thunk for setting up real-time subscriptions
 export const setupRealtimeSubscriptions = createAsyncThunk(
-  "employee/setupRealtimeSubscriptions",
+  "employees/setupRealtimeSubscriptions",
   async (_, { dispatch }) => {
     // Subscribe to Employee table changes
     const employeeSubscription = supabase
       .channel('employee-changes')
       .on('postgres_changes', {
-        event: '*',  
+        event: '*',  // Listen to all events (INSERT, UPDATE, DELETE)
         schema: 'public',
         table: 'Employee'
       }, (payload) => {
         console.log('Employee change received:', payload);
-        
-        switch (payload.eventType) {
-          case 'INSERT':
-            dispatch(handleEmployeeInserted(payload.new));
-            break;
-          case 'UPDATE':
-            dispatch(handleEmployeeUpdated(payload.new));
-            break;
-          case 'DELETE':
-            dispatch(handleEmployeeDeleted(payload.old.id));
-            break;
+        // Handle the different event types
+        if (payload.eventType === 'INSERT') {
+          dispatch(handleEmployeeInserted(payload.new));
+        } else if (payload.eventType === 'UPDATE') {
+          dispatch(handleEmployeeUpdated(payload.new));
+        } else if (payload.eventType === 'DELETE') {
+          dispatch(handleEmployeeDeleted(payload.old.id));
         }
       })
       .subscribe();
-      
+
     // Subscribe to project_employee table changes
     const projectEmployeeSubscription = supabase
-      .channel('project-employee-changes')
+      .channel('employee-project-changes')
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'project_employee'
       }, (payload) => {
-        console.log('Project-Employee relation change received:', payload);
-        
-        const employeeId = payload.eventType === 'INSERT' ? 
-          payload.new?.emp_id : 
-          payload.old?.emp_id;
-          
-        if (employeeId) {
-          dispatch(fetchEmployeeWithProjects(employeeId));
+        console.log('Employee-Project relation change received:', payload);
+        // When project assignments change, fetch the updated employee data
+        if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
+          dispatch(fetchEmployeeWithProjects(payload.new?.emp_id || payload.old?.emp_id));
         }
       })
       .subscribe();
@@ -55,24 +215,22 @@ export const setupRealtimeSubscriptions = createAsyncThunk(
 
 // Fetch a single employee with projects (used for real-time updates)
 export const fetchEmployeeWithProjects = createAsyncThunk(
-  "employee/fetchEmployeeWithProjects",
+  "employees/fetchEmployeeWithProjects",
   async (employeeId, { rejectWithValue }) => {
     try {
       const { data, error } = await supabase
         .from("Employee")
         .select(`
-          id, 
-          name, 
+          id,
+          name,
           project_employee (
-            project_id, 
+            project_id,
             Projects ( id, name )
           )
         `)
         .eq("id", employeeId)
         .single();
-      
       if (error) throw error;
-      
       return {
         ...data,
         projects: data.project_employee.map(pe => pe.Projects) || [],
@@ -83,272 +241,32 @@ export const fetchEmployeeWithProjects = createAsyncThunk(
   }
 );
 
-// Fetch all employees
-export const fetchEmployees = createAsyncThunk(
-  "employee/fetchEmployees",
-  async (_, { rejectWithValue }) => {
-    try {
-      const { data, error } = await supabase
-        .from("Employee")
-        .select(`
-          id, 
-          name, 
-          project_employee (
-            project_id, 
-            Projects ( id, name )
-          )
-        `);
-
-      if (error) throw error;
-      
-      const formattedData = data.map((employee) => ({
-        ...employee,
-        projects: employee.project_employee.map(pe => pe.Projects) || [],
-      }));
-      
-      return formattedData;
-    } catch (error) {
-      return rejectWithValue("Failed to fetch employees");
-    }
-  }
-);
-
-// Fetch all projects
-export const fetchProjects = createAsyncThunk(
-  "employee/fetchProjects",
-  async (_, { rejectWithValue }) => {
-    try {
-      const { data, error } = await supabase.from("Projects").select("id, name");
-      
-      if (error) throw error;
-      return data;
-    } catch (error) {
-      return rejectWithValue("Failed to fetch projects");
-    }
-  }
-);
-
-// Add employee
-export const addEmployee = createAsyncThunk(
-  "employee/addEmployee",
-  async (employeeName, { rejectWithValue }) => {
-    try {
-      const { data, error } = await supabase
-        .from("Employee")
-        .insert([{ name: employeeName.trim() }])
-        .select();
-      
-      if (error) throw error;
-      return data[0];
-    } catch (error) {
-      return rejectWithValue(error.message || "Failed to add employee");
-    }
-  }
-);
-
-// Delete employee
-export const deleteEmployee = createAsyncThunk(
-  "employee/deleteEmployee",
-  async (id, { rejectWithValue }) => {
-    try {
-      // First delete from project_employee table
-      const { error: relationError } = await supabase
-        .from("project_employee")
-        .delete()
-        .eq("emp_id", id);
-      
-      if (relationError) throw relationError;
-      
-      // Then delete the employee
-      const { error } = await supabase
-        .from("Employee")
-        .delete()
-        .eq("id", id);
-      
-      if (error) throw error;
-      return id;
-    } catch (error) {
-      return rejectWithValue(error.message || "Failed to delete employee");
-    }
-  }
-);
-
-// Update employee
-export const updateEmployee = createAsyncThunk(
-  "employee/updateEmployee",
-  async ({ id, name }, { rejectWithValue }) => {
-    try {
-      const { data, error } = await supabase
-        .from("Employee")
-        .update({ name })
-        .eq("id", id)
-        .select();
-      
-      if (error) throw error;
-      return data[0];
-    } catch (error) {
-      return rejectWithValue(error.message || "Failed to update employee");
-    }
-  }
-);
-
-// Assign projects to employee
-export const assignProjects = createAsyncThunk(
-  "employee/assignProjects",
-  async ({ employeeId, projectIds }, { rejectWithValue }) => {
-    try {
-      // First delete existing assignments
-      const { error: deleteError } = await supabase
-        .from("project_employee")
-        .delete()
-        .eq("emp_id", employeeId);
-      
-      if (deleteError) throw deleteError;
-      
-      // Then insert new assignments if there are any
-      if (projectIds.length > 0) {
-        const { error: insertError } = await supabase
-          .from("project_employee")
-          .insert(
-            projectIds.map(projectId => ({
-              emp_id: employeeId,
-              project_id: projectId
-            }))
-          );
-        
-        if (insertError) throw insertError;
-      }
-      
-      // Return updated employee with projects
-      const { data, error } = await supabase
-        .from("Employee")
-        .select(`
-          id, 
-          name, 
-          project_employee (
-            project_id, 
-            Projects ( id, name )
-          )
-        `)
-        .eq("id", employeeId)
-        .single();
-      
-      if (error) throw error;
-      
-      return {
-        ...data,
-        projects: data.project_employee.map(pe => pe.Projects) || [],
-      };
-    } catch (error) {
-      return rejectWithValue(error.message || "Failed to assign projects");
-    }
-  }
-);
-
-// Remove projects from employee
-export const removeProjects = createAsyncThunk(
-  "employee/removeProjects",
-  async ({ employeeId, projectIds }, { rejectWithValue }) => {
-    try {
-      const { error } = await supabase
-        .from("project_employee")
-        .delete()
-        .in("project_id", projectIds)
-        .eq("emp_id", employeeId);
-      
-      if (error) throw error;
-      
-      // Return updated employee with projects
-      const { data, error: fetchError } = await supabase
-        .from("Employee")
-        .select(`
-          id, 
-          name, 
-          project_employee (
-            project_id, 
-            Projects ( id, name )
-          )
-        `)
-        .eq("id", employeeId)
-        .single();
-      
-      if (fetchError) throw fetchError;
-      
-      return {
-        ...data,
-        projects: data.project_employee.map(pe => pe.Projects) || [],
-      };
-    } catch (error) {
-      return rejectWithValue(error.message || "Failed to remove projects");
-    }
-  }
-);
-
-// Search employees
-export const searchEmployees = createAsyncThunk(
-  "employee/searchEmployees",
-  async (searchTerm, { rejectWithValue }) => {
-    try {
-      const { data, error } = await supabase
-        .from("Employee")
-        .select(`
-          id, 
-          name, 
-          project_employee (
-            project_id, 
-            Projects ( id, name )
-          )
-        `)
-        .ilike("name", `%${searchTerm}%`);
-      
-      if (error) throw error;
-      
-      const formattedData = data.map((employee) => ({
-        ...employee,
-        projects: employee.project_employee.map(pe => pe.Projects) || [],
-      }));
-      
-      return formattedData;
-    } catch (error) {
-      return rejectWithValue(error.message || "Failed to search employees");
-    }
-  }
-);
+const initialState = {
+  employees: [],
+  projects: [],
+  loading: false,
+  error: null,
+  successMessage: "",
+  searchResults: [],
+  isSearching: false,
+  realtimeSubscriptions: null,
+  realtimeConnected: false
+};
 
 const employeeSlice = createSlice({
-  name: "employee",
-  initialState: {
-    employees: [],
-    projects: [],
-    selectedEmployee: null,
-    loading: false,
-    error: null,
-    successMessage: "",
-    showEditForm: false,
-    showAssignForm: false,
-    showRemoveForm: false,
-    realtimeSubscriptions: null,
-    realtimeConnected: false,
-    lastUpdated: null,
-  },
+  name: "employees",
+  initialState,
   reducers: {
-    clearMessages: (state) => {
+    resetMessages: (state) => {
       state.successMessage = "";
       state.error = null;
     },
-    setSelectedEmployee: (state, action) => {
-      state.selectedEmployee = action.payload;
-    },
-    setShowEditForm: (state, action) => {
-      state.showEditForm = action.payload;
-    },
-    setShowAssignForm: (state, action) => {
-      state.showAssignForm = action.payload;
-    },
-    setShowRemoveForm: (state, action) => {
-      state.showRemoveForm = action.payload;
+    resetSearch: (state) => {
+      state.searchResults = [];
+      state.isSearching = false;
     },
     handleEmployeeInserted: (state, action) => {
+      // Check if employee already exists to avoid duplicates
       const employeeExists = state.employees.some(emp => emp.id === action.payload.id);
       if (!employeeExists) {
         state.employees.push({
@@ -361,171 +279,150 @@ const employeeSlice = createSlice({
     handleEmployeeUpdated: (state, action) => {
       state.employees = state.employees.map(emp =>
         emp.id === action.payload.id
-          ? { ...action.payload, lastUpdated: Date.now() }
+          ? { ...action.payload, projects: emp.projects }
           : emp
       );
       state.successMessage = `Employee "${action.payload.name}" updated by another user!`;
-      state.lastUpdated = Date.now();
     },
     handleEmployeeDeleted: (state, action) => {
       state.employees = state.employees.filter(emp => emp.id !== action.payload);
       state.successMessage = "An employee was deleted by another user!";
-    },
+    }
   },
   extraReducers: (builder) => {
     builder
-      .addCase(setupRealtimeSubscriptions.fulfilled, (state, action) => {
-        state.realtimeSubscriptions = action.payload;
-        state.realtimeConnected = true;
-      })
-      
-      // Handle fetchEmployeeWithProjects (for real-time updates)
-      .addCase(fetchEmployeeWithProjects.fulfilled, (state, action) => {
-        // Update the employee in the state
-        state.employees = state.employees.map(emp => 
-          emp.id === action.payload.id ? action.payload : emp
-        );
-        
-        // If this is the selected employee, update that too
-        if (state.selectedEmployee && state.selectedEmployee.id === action.payload.id) {
-          state.selectedEmployee = action.payload;
-        }
-        
-        state.successMessage = `Project assignments for "${action.payload.name}" were updated by another user!`;
-      })
-      
-      // Handle fetchEmployees
-      .addCase(fetchEmployees.pending, (state) => {
+      // Fetch employees cases
+      .addCase(fetchEmployeesAsync.pending, (state) => {
         state.loading = true;
         state.error = null;
       })
-      .addCase(fetchEmployees.fulfilled, (state, action) => {
+      .addCase(fetchEmployeesAsync.fulfilled, (state, action) => {
         state.loading = false;
         state.employees = action.payload;
       })
-      .addCase(fetchEmployees.rejected, (state, action) => {
+      .addCase(fetchEmployeesAsync.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       })
-      
-      // Handle fetchProjects
-      .addCase(fetchProjects.pending, (state) => {
+      // Fetch projects cases
+      .addCase(fetchProjectsAsync.pending, (state) => {
         state.loading = true;
         state.error = null;
       })
-      .addCase(fetchProjects.fulfilled, (state, action) => {
+      .addCase(fetchProjectsAsync.fulfilled, (state, action) => {
         state.loading = false;
         state.projects = action.payload;
       })
-      .addCase(fetchProjects.rejected, (state, action) => {
+      .addCase(fetchProjectsAsync.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       })
-      
-      // Handle addEmployee
-      .addCase(addEmployee.pending, (state) => {
+      // Add employee cases
+      .addCase(addEmployeeAsync.pending, (state) => {
         state.loading = true;
         state.error = null;
         state.successMessage = "";
       })
-      .addCase(addEmployee.fulfilled, (state, action) => {
+      .addCase(addEmployeeAsync.fulfilled, (state, action) => {
         state.loading = false;
-        // With real-time, this will be handled by the subscription
-        state.successMessage = `Employee "${action.payload.name}" added successfully!`;
+        state.employees.push(action.payload);
+        state.successMessage = `Employee "${action.payload.name}" created successfully!`;
       })
-      .addCase(addEmployee.rejected, (state, action) => {
+      .addCase(addEmployeeAsync.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       })
-      
-      // Handle deleteEmployee
-      .addCase(deleteEmployee.pending, (state) => {
+      // Delete employee cases
+      .addCase(deleteEmployeeAsync.pending, (state) => {
         state.loading = true;
         state.error = null;
+        state.successMessage = "";
       })
-      .addCase(deleteEmployee.fulfilled, (state, action) => {
+      .addCase(deleteEmployeeAsync.fulfilled, (state, action) => {
         state.loading = false;
-        // With real-time, this will be handled by the subscription
+        state.employees = state.employees.filter(employee => employee.id !== action.payload);
         state.successMessage = "Employee deleted successfully!";
       })
-      .addCase(deleteEmployee.rejected, (state, action) => {
+      .addCase(deleteEmployeeAsync.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       })
-      
-      // Handle updateEmployee
-      .addCase(updateEmployee.pending, (state) => {
+      // Update employee cases
+      .addCase(updateEmployeeAsync.pending, (state) => {
         state.loading = true;
         state.error = null;
+        state.successMessage = "";
       })
-      .addCase(updateEmployee.fulfilled, (state, action) => {
+      .addCase(updateEmployeeAsync.fulfilled, (state, action) => {
         state.loading = false;
-        // With real-time, this will be handled by the subscription
+        const index = state.employees.findIndex(employee => employee.id === action.payload.id);
+        if (index !== -1) {
+          // Preserve projects array when updating
+          const projects = state.employees[index].projects;
+          state.employees[index] = { ...action.payload, projects };
+        }
         state.successMessage = `Employee "${action.payload.name}" updated successfully!`;
-        state.showEditForm = false;
       })
-      .addCase(updateEmployee.rejected, (state, action) => {
+      .addCase(updateEmployeeAsync.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       })
-      
-      // Handle assignProjects
-      .addCase(assignProjects.pending, (state) => {
+      // Assign projects cases
+      .addCase(assignProjectsAsync.pending, (state) => {
         state.loading = true;
         state.error = null;
+        state.successMessage = "";
       })
-      .addCase(assignProjects.fulfilled, (state, action) => {
+      .addCase(assignProjectsAsync.fulfilled, (state) => {
         state.loading = false;
-        // With real-time, this will be handled by the subscription
         state.successMessage = "Projects assigned successfully!";
-        state.showAssignForm = false;
       })
-      .addCase(assignProjects.rejected, (state, action) => {
+      .addCase(assignProjectsAsync.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       })
-      
-      // Handle removeProjects
-      .addCase(removeProjects.pending, (state) => {
+      // Remove projects cases
+      .addCase(removeProjectsAsync.pending, (state) => {
         state.loading = true;
         state.error = null;
+        state.successMessage = "";
       })
-      .addCase(removeProjects.fulfilled, (state, action) => {
+      .addCase(removeProjectsAsync.fulfilled, (state) => {
         state.loading = false;
-        // With real-time, this will be handled by the subscription
         state.successMessage = "Projects removed successfully!";
-        state.showRemoveForm = false;
       })
-      .addCase(removeProjects.rejected, (state, action) => {
+      .addCase(removeProjectsAsync.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       })
-      
-      // Handle searchEmployees
-      .addCase(searchEmployees.pending, (state) => {
-        state.loading = true;
+      // Search employees cases
+      .addCase(searchEmployeesAsync.pending, (state) => {
+        state.isSearching = true;
         state.error = null;
       })
-      .addCase(searchEmployees.fulfilled, (state, action) => {
-        state.loading = false;
-        state.employees = action.payload;
+      .addCase(searchEmployeesAsync.fulfilled, (state, action) => {
+        state.isSearching = false;
+        state.searchResults = action.payload;
       })
-      .addCase(searchEmployees.rejected, (state, action) => {
-        state.loading = false;
+      .addCase(searchEmployeesAsync.rejected, (state, action) => {
+        state.isSearching = false;
         state.error = action.payload;
+      })
+      // Handle real-time subscriptions
+      .addCase(setupRealtimeSubscriptions.fulfilled, (state, action) => {
+        state.realtimeSubscriptions = action.payload;
+        state.realtimeConnected = true;
+      })
+      // Handle fetchEmployeeWithProjects (for real-time updates)
+      .addCase(fetchEmployeeWithProjects.fulfilled, (state, action) => {
+        // Update the employee in the state
+        state.employees = state.employees.map(emp =>
+          emp.id === action.payload.id ? action.payload : emp
+        );
+        state.successMessage = `Employee assignments for "${action.payload.name}" were updated by another user!`;
       });
-  },
+  }
 });
 
-export const { 
-  clearMessages,
-  setSelectedEmployee,
-  setShowEditForm,
-  setShowAssignForm,
-  setShowRemoveForm,
-  handleEmployeeInserted,
-  handleEmployeeUpdated,
-  handleEmployeeDeleted
-} = employeeSlice.actions;
-
+export const { resetMessages, resetSearch } = employeeSlice.actions;
 export default employeeSlice.reducer;

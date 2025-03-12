@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import { addEmployee, clearMessages, setupRealtimeSubscriptions } from "../../features/employeeSlice.js";
+import { addEmployeeAsync, resetMessages, setupRealtimeSubscriptions } from "../../features/employeeSlice.js";
 
 export default function Add() {
   const [employeeName, setEmployeeName] = useState("");
@@ -21,7 +21,7 @@ export default function Add() {
   useEffect(() => {
     if (successMessage) {
       const timer = setTimeout(() => {
-        dispatch(clearMessages());
+        dispatch(resetMessages());
         navigate("/Employees"); 
       }, 1000);
       return () => clearTimeout(timer);
@@ -30,7 +30,7 @@ export default function Add() {
 
   const handleAddEmployee = () => {
     if (!employeeName.trim()) return;
-    dispatch(addEmployee(employeeName));
+    dispatch(addEmployeeAsync(employeeName));
     setEmployeeName("");
   };
 
