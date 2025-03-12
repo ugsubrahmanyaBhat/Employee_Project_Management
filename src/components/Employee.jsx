@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
-import { 
-  fetchEmployees, 
-  fetchProjects, 
+import {
+  fetchEmployees,
+  fetchProjects,
   deleteEmployee,
   updateEmployee,
   assignProjects,
@@ -19,23 +19,27 @@ import {
 
 export default function Employee() {
   const dispatch = useDispatch();
-  const { 
+  const {
     employees = [],
     projects = [],
     selectedEmployee,
-    loading, 
-    error, 
+    loading,
+    error,
     successMessage,
     showEditForm,
     showAssignForm,
     showRemoveForm,
     realtimeConnected
   } = useSelector(state => state.employees);
-
+  
   const [showOptions, setShowOptions] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [formData, setFormData] = useState({
+    name: "",
+    selectedProjects: [],
+    removeProjects: []
+  });
 
-  // Set up real-time subscriptions on component mount
   useEffect(() => {
     if (!realtimeConnected) {
       dispatch(setupRealtimeSubscriptions());
@@ -68,18 +72,27 @@ export default function Employee() {
   const handleEdit = (employee) => {
     dispatch(setSelectedEmployee(employee));
     dispatch(setShowEditForm(true));
+    setFormData({ ...formData, name: employee.name });
     setShowOptions(null);
   };
 
   const handleAssign = (employee) => {
     dispatch(setSelectedEmployee(employee));
     dispatch(setShowAssignForm(true));
+    setFormData({
+      ...formData,
+      selectedProjects: employee.projects?.map(p => p.id) || []
+    });
     setShowOptions(null);
   };
 
   const handleRemove = (employee) => {
     dispatch(setSelectedEmployee(employee));
     dispatch(setShowRemoveForm(true));
+    setFormData({
+      ...formData,
+      removeProjects: employee.projects?.map(p => p.id) || []
+    });
     setShowOptions(null);
   };
 
@@ -164,7 +177,7 @@ export default function Employee() {
             <p className="text-gray-400 text-sm mb-4">
               Projects: {employee.projects?.map(p => p.name).join(", ") || 'None assigned'}
             </p>
-            
+
             {/* Action Buttons */}
             <div className="flex flex-wrap gap-2">
               <button
@@ -216,13 +229,21 @@ function EditEmployeeForm() {
   const dispatch = useDispatch();
   const { selectedEmployee } = useSelector(state => state.employees);
   const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (selectedEmployee) setName(selectedEmployee.name);
   }, [selectedEmployee]);
 
-  const handleUpdate = () => {
-    dispatch(updateEmployee({ id: selectedEmployee.id, name }));
+  const handleUpdate = async () => {
+    setLoading(true);
+    try {
+      await dispatch(updateEmployee({ id: selectedEmployee.id, name }));
+    } catch (error) {
+      console.error('Error updating employee:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleClose = () => {
@@ -230,7 +251,6 @@ function EditEmployeeForm() {
   };
 
   if (!selectedEmployee) return null;
-
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d2d] shadow-2xl">
@@ -242,10 +262,17 @@ function EditEmployeeForm() {
           className="w-full bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 mb-4"
         />
         <div className="flex gap-4">
-          <button onClick={handleUpdate} className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg">
-            Save
+          <button
+            onClick={handleUpdate}
+            className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg"
+            disabled={loading}
+          >
+            {loading ? "Saving..." : "Save"}
           </button>
-          <button onClick={handleClose} className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg">
+          <button
+            onClick={handleClose}
+            className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg"
+          >
             Cancel
           </button>
         </div>
@@ -259,6 +286,7 @@ function AssignProjectForm() {
   const dispatch = useDispatch();
   const { selectedEmployee, projects } = useSelector(state => state.employees);
   const [selectedProjects, setSelectedProjects] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (selectedEmployee?.projects) {
@@ -266,8 +294,18 @@ function AssignProjectForm() {
     }
   }, [selectedEmployee]);
 
-  const handleAssign = () => {
-    dispatch(assignProjects({ employeeId: selectedEmployee.id, projectIds: selectedProjects }));
+  const handleAssign = async () => {
+    setLoading(true);
+    try {
+      await dispatch(assignProjects({ 
+        employeeId: selectedEmployee.id, 
+        projectIds: selectedProjects 
+      }));
+    } catch (error) {
+      console.error('Error assigning projects:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleClose = () => {
@@ -275,10 +313,9 @@ function AssignProjectForm() {
   };
 
   if (!selectedEmployee) return null;
-
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d2d] shadow-2xl">
+      <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d3d] shadow-2xl">
         <h2 className="text-2xl font-bold text-white mb-6">Assign Projects to {selectedEmployee.name}</h2>
         <div className="space-y-2 max-h-60 overflow-y-auto">
           {projects.map(project => (
@@ -299,10 +336,17 @@ function AssignProjectForm() {
           ))}
         </div>
         <div className="mt-6 flex gap-4">
-          <button onClick={handleAssign} className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg">
-            Save
+          <button
+            onClick={handleAssign}
+            className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white px-6 py-3 rounded-lg"
+            disabled={loading}
+          >
+            {loading ? "Saving..." : "Save"}
           </button>
-          <button onClick={handleClose} className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg">
+          <button
+            onClick={handleClose}
+            className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg"
+          >
             Cancel
           </button>
         </div>
@@ -316,9 +360,26 @@ function RemoveProjectForm() {
   const dispatch = useDispatch();
   const { selectedEmployee } = useSelector(state => state.employees);
   const [selectedProjects, setSelectedProjects] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  const handleRemove = () => {
-    dispatch(removeProjects({ employeeId: selectedEmployee.id, projectIds: selectedProjects }));
+  useEffect(() => {
+    if (selectedEmployee?.projects) {
+      setSelectedProjects(selectedEmployee.projects.map(p => p.id));
+    }
+  }, [selectedEmployee]);
+
+  const handleRemove = async () => {
+    setLoading(true);
+    try {
+      await dispatch(removeProjects({ 
+        employeeId: selectedEmployee.id, 
+        projectIds: selectedProjects 
+      }));
+    } catch (error) {
+      console.error('Error removing projects:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleClose = () => {
@@ -326,10 +387,9 @@ function RemoveProjectForm() {
   };
 
   if (!selectedEmployee) return null;
-
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d2d] shadow-2xl">
+      <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d3d] shadow-2xl">
         <h2 className="text-2xl font-bold text-white mb-6">Remove Projects from {selectedEmployee.name}</h2>
         <div className="space-y-2 max-h-60 overflow-y-auto">
           {selectedEmployee.projects?.map(project => (
@@ -350,10 +410,17 @@ function RemoveProjectForm() {
           ))}
         </div>
         <div className="mt-6 flex gap-4">
-          <button onClick={handleRemove} className="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg">
-            Remove
+          <button
+            onClick={handleRemove}
+            className="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg"
+            disabled={loading}
+          >
+            {loading ? "Removing..." : "Remove"}
           </button>
-          <button onClick={handleClose} className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg">
+          <button
+            onClick={handleClose}
+            className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg"
+          >
             Cancel
           </button>
         </div>
