@@ -16,7 +16,7 @@ export const signupUser = createAsyncThunk(
   async ({ email, password }, { rejectWithValue }) => {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) return rejectWithValue(error.message);
-    localStorage.setItem("authSession", JSON.stringify(data.session));  // ✅ Save session
+    localStorage.setItem("authSession", JSON.stringify(data.session));  
     return data.session || null;
   }
 );
@@ -27,7 +27,7 @@ export const loginUser = createAsyncThunk(
   async ({ email, password }, { rejectWithValue }) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return rejectWithValue(error.message);
-    localStorage.setItem("authSession", JSON.stringify(data.session));  // ✅ Save session
+    localStorage.setItem("authSession", JSON.stringify(data.session));  
     return data.session || null;
   }
 );
@@ -35,14 +35,14 @@ export const loginUser = createAsyncThunk(
 // Async action for logout
 export const logoutUser = createAsyncThunk("auth/logoutUser", async () => {
   await supabase.auth.signOut();
-  localStorage.removeItem("authSession");  // ✅ Remove session on logout
+  localStorage.removeItem("authSession");  
   return null;
 });
 
 const authSlice = createSlice({
   name: "auth",
   initialState: {
-    session: savedSession,  // ✅ Load session from storage
+    session: savedSession,  
     loading: false,
     error: null,
   },

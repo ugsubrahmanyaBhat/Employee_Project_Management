@@ -1,6 +1,6 @@
 import { configureStore } from "@reduxjs/toolkit";
 import { persistStore, persistReducer } from "redux-persist";
-import storage from "redux-persist/lib/storage";  // ✅ Persistent storage
+import storage from "redux-persist/lib/storage";  
 import employeeReducer from "./features/employeeSlice";
 import projectReducer from "./features/projectSlice";
 import authReducer from "./features/authSlice";
@@ -17,7 +17,7 @@ export const store = configureStore({
   reducer: {
     employees: employeeReducer,
     projects: projectReducer,
-    auth: persistedAuthReducer,  // ✅ Use persisted auth reducer
+    auth: persistedAuthReducer,  
   },
 });
 
