@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch, useSelector, shallowEqual } from "react-redux";
 import {
   fetchEmployees,
   fetchProjects,
@@ -15,7 +15,7 @@ import {
   searchEmployees,
   clearMessages,
   setupRealtimeSubscriptions
-} from "../features/employeeSlice.js";
+} from "../features/employeeSlice";
 
 export default function Employee() {
   const dispatch = useDispatch();
@@ -29,8 +29,9 @@ export default function Employee() {
     showEditForm,
     showAssignForm,
     showRemoveForm,
-    realtimeConnected
-  } = useSelector(state => state.employees);
+    realtimeConnected,
+    lastUpdated
+  } = useSelector(state => state.employees, shallowEqual);
   
   const [showOptions, setShowOptions] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -49,7 +50,7 @@ export default function Employee() {
   useEffect(() => {
     dispatch(fetchEmployees());
     dispatch(fetchProjects());
-  }, [dispatch]);
+  }, [dispatch, lastUpdated]);
 
   useEffect(() => {
     if (successMessage || error) {
@@ -172,12 +173,14 @@ export default function Employee() {
       {/* Employees Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
         {employees.map((employee) => (
-          <div key={employee.id} className="bg-[#181818] p-6 rounded-2xl shadow-2xl border border-[#2d2d2d] relative hover:border-cyan-500 transition-all">
+          <div 
+            key={`${employee.id}-${employee.lastUpdated || ''}`}
+            className="bg-[#181818] p-6 rounded-2xl shadow-2xl border border-[#2d2d2d] relative hover:border-cyan-500 transition-all"
+          >
             <h3 className="text-xl font-bold text-white mb-2">{employee.name}</h3>
             <p className="text-gray-400 text-sm mb-4">
               Projects: {employee.projects?.map(p => p.name).join(", ") || 'None assigned'}
             </p>
-
             {/* Action Buttons */}
             <div className="flex flex-wrap gap-2">
               <button
@@ -251,6 +254,7 @@ function EditEmployeeForm() {
   };
 
   if (!selectedEmployee) return null;
+
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d2d] shadow-2xl">
@@ -297,9 +301,9 @@ function AssignProjectForm() {
   const handleAssign = async () => {
     setLoading(true);
     try {
-      await dispatch(assignProjects({ 
-        employeeId: selectedEmployee.id, 
-        projectIds: selectedProjects 
+      await dispatch(assignProjects({
+        employeeId: selectedEmployee.id,
+        projectIds: selectedProjects
       }));
     } catch (error) {
       console.error('Error assigning projects:', error);
@@ -313,6 +317,7 @@ function AssignProjectForm() {
   };
 
   if (!selectedEmployee) return null;
+
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d3d] shadow-2xl">
@@ -371,9 +376,9 @@ function RemoveProjectForm() {
   const handleRemove = async () => {
     setLoading(true);
     try {
-      await dispatch(removeProjects({ 
-        employeeId: selectedEmployee.id, 
-        projectIds: selectedProjects 
+      await dispatch(removeProjects({
+        employeeId: selectedEmployee.id,
+        projectIds: selectedProjects
       }));
     } catch (error) {
       console.error('Error removing projects:', error);
@@ -387,6 +392,7 @@ function RemoveProjectForm() {
   };
 
   if (!selectedEmployee) return null;
+
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d3d] shadow-2xl">

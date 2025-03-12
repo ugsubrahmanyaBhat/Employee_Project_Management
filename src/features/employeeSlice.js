@@ -1,28 +1,29 @@
-// employeeSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { supabase } from "../supabase/SupabaseClient";
 
-// Set up real-time subscriptions
 export const setupRealtimeSubscriptions = createAsyncThunk(
   "employee/setupRealtimeSubscriptions",
   async (_, { dispatch }) => {
     // Subscribe to Employee table changes
     const employeeSubscription = supabase
       .channel('employee-changes')
-      .on('postgres_changes', { 
-        event: '*',  // Listen to all events (INSERT, UPDATE, DELETE)
-        schema: 'public', 
-        table: 'Employee' 
+      .on('postgres_changes', {
+        event: '*',  
+        schema: 'public',
+        table: 'Employee'
       }, (payload) => {
         console.log('Employee change received:', payload);
         
-        // Handle the different event types
-        if (payload.eventType === 'INSERT') {
-          dispatch(handleEmployeeInserted(payload.new));
-        } else if (payload.eventType === 'UPDATE') {
-          dispatch(handleEmployeeUpdated(payload.new));
-        } else if (payload.eventType === 'DELETE') {
-          dispatch(handleEmployeeDeleted(payload.old.id));
+        switch (payload.eventType) {
+          case 'INSERT':
+            dispatch(handleEmployeeInserted(payload.new));
+            break;
+          case 'UPDATE':
+            dispatch(handleEmployeeUpdated(payload.new));
+            break;
+          case 'DELETE':
+            dispatch(handleEmployeeDeleted(payload.old.id));
+            break;
         }
       })
       .subscribe();
@@ -30,16 +31,19 @@ export const setupRealtimeSubscriptions = createAsyncThunk(
     // Subscribe to project_employee table changes
     const projectEmployeeSubscription = supabase
       .channel('project-employee-changes')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'project_employee' 
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'project_employee'
       }, (payload) => {
         console.log('Project-Employee relation change received:', payload);
         
-        // When project assignments change, fetch the updated employee data
-        if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
-          dispatch(fetchEmployeeWithProjects(payload.new?.emp_id || payload.old?.emp_id));
+        const employeeId = payload.eventType === 'INSERT' ? 
+          payload.new?.emp_id : 
+          payload.old?.emp_id;
+          
+        if (employeeId) {
+          dispatch(fetchEmployeeWithProjects(employeeId));
         }
       })
       .subscribe();
@@ -325,6 +329,7 @@ const employeeSlice = createSlice({
     showRemoveForm: false,
     realtimeSubscriptions: null,
     realtimeConnected: false,
+    lastUpdated: null,
   },
   reducers: {
     clearMessages: (state) => {
@@ -344,7 +349,6 @@ const employeeSlice = createSlice({
       state.showRemoveForm = action.payload;
     },
     handleEmployeeInserted: (state, action) => {
-      // Check if employee already exists to avoid duplicates
       const employeeExists = state.employees.some(emp => emp.id === action.payload.id);
       if (!employeeExists) {
         state.employees.push({
@@ -355,12 +359,13 @@ const employeeSlice = createSlice({
       }
     },
     handleEmployeeUpdated: (state, action) => {
-      state.employees = state.employees.map(emp => 
-        emp.id === action.payload.id 
-          ? { ...emp, name: action.payload.name } 
+      state.employees = state.employees.map(emp =>
+        emp.id === action.payload.id
+          ? { ...action.payload, lastUpdated: Date.now() }
           : emp
       );
       state.successMessage = `Employee "${action.payload.name}" updated by another user!`;
+      state.lastUpdated = Date.now();
     },
     handleEmployeeDeleted: (state, action) => {
       state.employees = state.employees.filter(emp => emp.id !== action.payload);
@@ -369,7 +374,6 @@ const employeeSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // Handle real-time subscriptions
       .addCase(setupRealtimeSubscriptions.fulfilled, (state, action) => {
         state.realtimeSubscriptions = action.payload;
         state.realtimeConnected = true;
