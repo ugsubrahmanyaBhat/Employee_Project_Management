@@ -1,35 +1,20 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../context/Authcontext";
+import { useDispatch, useSelector } from "react-redux";
+import { loginUser } from "../features/authSlice";  // ✅ Import Redux action
 
 export default function Signin() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [error, setError] = useState("");
-    const [loading, setLoading] = useState(false);
-
-    const { session, signin } = useAuth();
+    const dispatch = useDispatch();
     const navigate = useNavigate();
-
-    console.log(session);
+    
+    const { error, loading, session } = useSelector(state => state.auth);  // ✅ Get Redux state
 
     const handleSignin = async (e) => {
         e.preventDefault();
-        setLoading(true);
-        setError(""); // Reset previous error
-
-        try {
-            const result = await signin(email, password);
-            if (result.success) {
-                navigate("/Dashboard");
-            } else {
-                setError(result.error);
-            }
-        } catch (err) {
-            setError(err.message || "Something went wrong!");
-        } finally {
-            setLoading(false);
-        }
+        const result = await dispatch(loginUser({ email, password }));
+        if (result.payload) navigate("/Dashboard");  // ✅ Redirect on success
     };
 
     return (
@@ -46,32 +31,24 @@ export default function Signin() {
                         </p>
                     </div>
                     <div className="space-y-4">
-                        <div>
-                            <input
-                                onChange={(e) => setEmail(e.target.value)}
-                                type="email"
-                                placeholder="Email"
-                                required
-                                className="w-full px-3 py-2 text-white bg-[#333333] border border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400"
-                            />
-                        </div>
-                        <div>
-                            <input
-                                onChange={(e) => setPassword(e.target.value)}
-                                type="password"
-                                placeholder="Password"
-                                required
-                                className="w-full px-3 py-2 text-white bg-[#333333] border border-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400"
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full px-4 py-2 text-white font-medium bg-blue-600 rounded-md hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-[#2a2a2a] disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
+                        <input
+                            onChange={(e) => setEmail(e.target.value)}
+                            type="email"
+                            placeholder="Email"
+                            required
+                            className="w-full px-3 py-2 text-white bg-[#333] border border-gray-700 rounded-md"
+                        />
+                        <input
+                            onChange={(e) => setPassword(e.target.value)}
+                            type="password"
+                            placeholder="Password"
+                            required
+                            className="w-full px-3 py-2 text-white bg-[#333] border border-gray-700 rounded-md"
+                        />
+                        <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2 rounded-md">
                             {loading ? "Signing in..." : "Sign in"}
                         </button>
-                        {error && <p className="text-red-400 text-center pt-2">{error}</p>}
+                        {error && <p className="text-red-400 text-center">{error}</p>}
                     </div>
                 </form>
             </div>
