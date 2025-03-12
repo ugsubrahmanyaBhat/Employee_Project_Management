@@ -9,18 +9,20 @@ import {
   assignEmployeesAsync,
   removeEmployeesAsync,
   searchProjectsAsync,
-  resetSearch
+  resetSearch,
+  setupRealtimeSubscriptions
 } from "../features/projectSlice.js";
 
 export default function Projects() {
   const dispatch = useDispatch();
-  const { 
+  const {
     projects = [],
     employees = [],
     searchResults,
-    loading, 
-    error, 
-    successMessage
+    loading,
+    error,
+    successMessage,
+    realtimeConnected
   } = useSelector(state => state.projects);
   
   const [selectedProject, setSelectedProject] = useState(null);
@@ -29,15 +31,16 @@ export default function Projects() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
-  const [formData, setFormData] = useState({ 
-    name: "", 
-    selected: [], 
-    removeSelected: [] 
+  const [formData, setFormData] = useState({
+    name: "",
+    selected: [],
+    removeSelected: []
   });
 
   useEffect(() => {
     dispatch(fetchProjectsAsync());
     dispatch(fetchEmployeesAsync());
+    dispatch(setupRealtimeSubscriptions());
   }, [dispatch]);
 
   useEffect(() => {
@@ -52,7 +55,6 @@ export default function Projects() {
   const handleSearch = (e) => {
     const value = e.target.value;
     setSearchTerm(value);
-    
     if (value.trim()) {
       dispatch(searchProjectsAsync(value));
     } else {
@@ -74,6 +76,13 @@ export default function Projects() {
           <span>Add Project</span>
         </Link>
       </nav>
+
+      <div className="mt-4 flex items-center">
+        <div className={`h-3 w-3 rounded-full mr-2 ${realtimeConnected ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+        <span className="text-sm text-gray-400">
+          {realtimeConnected ? 'Realtime Connected' : 'Connecting to realtime...'}
+        </span>
+      </div>
 
       {/* Search Bar */}
       <div className="mt-6">
@@ -122,7 +131,7 @@ export default function Projects() {
             <p className="text-gray-400 text-sm mb-4">
               Employees: {project.employees?.map(e => e.name).join(", ") || 'None assigned'}
             </p>
-            
+
             {/* Action Buttons */}
             <div className="flex flex-wrap gap-2">
               <button
@@ -263,7 +272,7 @@ export default function Projects() {
       {/* Remove Employee Modal */}
       {showRemoveModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d2d] shadow-2xl">
+          <div className="bg-[#181818] rounded-2xl p-8 w-full max-w-md border border-[#2d2d3d] shadow-2xl">
             <h2 className="text-2xl font-bold text-white mb-6">Remove Employees from {selectedProject?.name}</h2>
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {selectedProject?.employees?.map(employee => (

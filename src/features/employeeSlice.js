@@ -2,6 +2,83 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { supabase } from "../supabase/SupabaseClient";
 
+// Set up real-time subscriptions
+export const setupRealtimeSubscriptions = createAsyncThunk(
+  "employee/setupRealtimeSubscriptions",
+  async (_, { dispatch }) => {
+    // Subscribe to Employee table changes
+    const employeeSubscription = supabase
+      .channel('employee-changes')
+      .on('postgres_changes', { 
+        event: '*',  // Listen to all events (INSERT, UPDATE, DELETE)
+        schema: 'public', 
+        table: 'Employee' 
+      }, (payload) => {
+        console.log('Employee change received:', payload);
+        
+        // Handle the different event types
+        if (payload.eventType === 'INSERT') {
+          dispatch(handleEmployeeInserted(payload.new));
+        } else if (payload.eventType === 'UPDATE') {
+          dispatch(handleEmployeeUpdated(payload.new));
+        } else if (payload.eventType === 'DELETE') {
+          dispatch(handleEmployeeDeleted(payload.old.id));
+        }
+      })
+      .subscribe();
+      
+    // Subscribe to project_employee table changes
+    const projectEmployeeSubscription = supabase
+      .channel('project-employee-changes')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'project_employee' 
+      }, (payload) => {
+        console.log('Project-Employee relation change received:', payload);
+        
+        // When project assignments change, fetch the updated employee data
+        if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
+          dispatch(fetchEmployeeWithProjects(payload.new?.emp_id || payload.old?.emp_id));
+        }
+      })
+      .subscribe();
+
+    // Return the subscriptions so they can be unsubscribed later if needed
+    return { employeeSubscription, projectEmployeeSubscription };
+  }
+);
+
+// Fetch a single employee with projects (used for real-time updates)
+export const fetchEmployeeWithProjects = createAsyncThunk(
+  "employee/fetchEmployeeWithProjects",
+  async (employeeId, { rejectWithValue }) => {
+    try {
+      const { data, error } = await supabase
+        .from("Employee")
+        .select(`
+          id, 
+          name, 
+          project_employee (
+            project_id, 
+            Projects ( id, name )
+          )
+        `)
+        .eq("id", employeeId)
+        .single();
+      
+      if (error) throw error;
+      
+      return {
+        ...data,
+        projects: data.project_employee.map(pe => pe.Projects) || [],
+      };
+    } catch (error) {
+      return rejectWithValue(error.message || "Failed to fetch employee with projects");
+    }
+  }
+);
+
 // Fetch all employees
 export const fetchEmployees = createAsyncThunk(
   "employee/fetchEmployees",
@@ -246,6 +323,8 @@ const employeeSlice = createSlice({
     showEditForm: false,
     showAssignForm: false,
     showRemoveForm: false,
+    realtimeSubscriptions: null,
+    realtimeConnected: false,
   },
   reducers: {
     clearMessages: (state) => {
@@ -264,9 +343,53 @@ const employeeSlice = createSlice({
     setShowRemoveForm: (state, action) => {
       state.showRemoveForm = action.payload;
     },
+    handleEmployeeInserted: (state, action) => {
+      // Check if employee already exists to avoid duplicates
+      const employeeExists = state.employees.some(emp => emp.id === action.payload.id);
+      if (!employeeExists) {
+        state.employees.push({
+          ...action.payload,
+          projects: []
+        });
+        state.successMessage = `Employee "${action.payload.name}" added by another user!`;
+      }
+    },
+    handleEmployeeUpdated: (state, action) => {
+      state.employees = state.employees.map(emp => 
+        emp.id === action.payload.id 
+          ? { ...emp, name: action.payload.name } 
+          : emp
+      );
+      state.successMessage = `Employee "${action.payload.name}" updated by another user!`;
+    },
+    handleEmployeeDeleted: (state, action) => {
+      state.employees = state.employees.filter(emp => emp.id !== action.payload);
+      state.successMessage = "An employee was deleted by another user!";
+    },
   },
   extraReducers: (builder) => {
     builder
+      // Handle real-time subscriptions
+      .addCase(setupRealtimeSubscriptions.fulfilled, (state, action) => {
+        state.realtimeSubscriptions = action.payload;
+        state.realtimeConnected = true;
+      })
+      
+      // Handle fetchEmployeeWithProjects (for real-time updates)
+      .addCase(fetchEmployeeWithProjects.fulfilled, (state, action) => {
+        // Update the employee in the state
+        state.employees = state.employees.map(emp => 
+          emp.id === action.payload.id ? action.payload : emp
+        );
+        
+        // If this is the selected employee, update that too
+        if (state.selectedEmployee && state.selectedEmployee.id === action.payload.id) {
+          state.selectedEmployee = action.payload;
+        }
+        
+        state.successMessage = `Project assignments for "${action.payload.name}" were updated by another user!`;
+      })
+      
       // Handle fetchEmployees
       .addCase(fetchEmployees.pending, (state) => {
         state.loading = true;
@@ -303,7 +426,7 @@ const employeeSlice = createSlice({
       })
       .addCase(addEmployee.fulfilled, (state, action) => {
         state.loading = false;
-        state.employees.push(action.payload);
+        // With real-time, this will be handled by the subscription
         state.successMessage = `Employee "${action.payload.name}" added successfully!`;
       })
       .addCase(addEmployee.rejected, (state, action) => {
@@ -318,7 +441,7 @@ const employeeSlice = createSlice({
       })
       .addCase(deleteEmployee.fulfilled, (state, action) => {
         state.loading = false;
-        state.employees = state.employees.filter(emp => emp.id !== action.payload);
+        // With real-time, this will be handled by the subscription
         state.successMessage = "Employee deleted successfully!";
       })
       .addCase(deleteEmployee.rejected, (state, action) => {
@@ -333,9 +456,7 @@ const employeeSlice = createSlice({
       })
       .addCase(updateEmployee.fulfilled, (state, action) => {
         state.loading = false;
-        state.employees = state.employees.map(emp => 
-          emp.id === action.payload.id ? { ...emp, name: action.payload.name } : emp
-        );
+        // With real-time, this will be handled by the subscription
         state.successMessage = `Employee "${action.payload.name}" updated successfully!`;
         state.showEditForm = false;
       })
@@ -351,9 +472,7 @@ const employeeSlice = createSlice({
       })
       .addCase(assignProjects.fulfilled, (state, action) => {
         state.loading = false;
-        state.employees = state.employees.map(emp => 
-          emp.id === action.payload.id ? action.payload : emp
-        );
+        // With real-time, this will be handled by the subscription
         state.successMessage = "Projects assigned successfully!";
         state.showAssignForm = false;
       })
@@ -369,9 +488,7 @@ const employeeSlice = createSlice({
       })
       .addCase(removeProjects.fulfilled, (state, action) => {
         state.loading = false;
-        state.employees = state.employees.map(emp => 
-          emp.id === action.payload.id ? action.payload : emp
-        );
+        // With real-time, this will be handled by the subscription
         state.successMessage = "Projects removed successfully!";
         state.showRemoveForm = false;
       })
@@ -401,7 +518,10 @@ export const {
   setSelectedEmployee,
   setShowEditForm,
   setShowAssignForm,
-  setShowRemoveForm
+  setShowRemoveForm,
+  handleEmployeeInserted,
+  handleEmployeeUpdated,
+  handleEmployeeDeleted
 } = employeeSlice.actions;
 
 export default employeeSlice.reducer;

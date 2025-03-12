@@ -9,14 +9,11 @@ export const fetchProjectsAsync = createAsyncThunk(
       const { data, error } = await supabase
         .from("Projects")
         .select("id, name, project_employee ( emp_id, Employee ( id, name ) )");
-
       if (error) throw error;
-
       const formattedData = data.map((project) => ({
         ...project,
         employees: project.project_employee.map(pe => pe.Employee) || [],
       }));
-
       return formattedData;
     } catch (error) {
       return rejectWithValue(error.message || "Failed to fetch projects.");
@@ -32,9 +29,7 @@ export const fetchEmployeesAsync = createAsyncThunk(
       const { data, error } = await supabase
         .from("Employee")
         .select("id, name");
-
       if (error) throw error;
-
       return data;
     } catch (error) {
       return rejectWithValue(error.message || "Failed to fetch employees.");
@@ -51,9 +46,7 @@ export const addProjectAsync = createAsyncThunk(
         .from("Projects")
         .insert([{ name: projectName.trim() }])
         .select();
-
       if (error) throw error;
-
       return data[0]; // Return the new project
     } catch (error) {
       return rejectWithValue(error.message || "Failed to create project.");
@@ -71,17 +64,13 @@ export const deleteProjectAsync = createAsyncThunk(
         .from("project_employee")
         .delete()
         .eq("project_id", projectId);
-
       if (relatedError) throw relatedError;
-
       // Then delete the project
       const { error } = await supabase
         .from("Projects")
         .delete()
         .eq("id", projectId);
-
       if (error) throw error;
-
       return projectId;
     } catch (error) {
       return rejectWithValue(error.message || "Failed to delete project.");
@@ -99,9 +88,7 @@ export const updateProjectAsync = createAsyncThunk(
         .update({ name: name.trim() })
         .eq("id", projectId)
         .select();
-
       if (error) throw error;
-
       return data[0];
     } catch (error) {
       return rejectWithValue(error.message || "Failed to update project.");
@@ -119,26 +106,20 @@ export const assignEmployeesAsync = createAsyncThunk(
         .from("project_employee")
         .delete()
         .eq("project_id", projectId);
-
       if (deleteError) throw deleteError;
-
       // Then create new assignments
       if (employeeIds.length > 0) {
         const assignmentsToInsert = employeeIds.map(empId => ({
           project_id: projectId,
           emp_id: empId
         }));
-
         const { error: insertError } = await supabase
           .from("project_employee")
           .insert(assignmentsToInsert);
-
         if (insertError) throw insertError;
       }
-
       // Fetch updated project data
       dispatch(fetchProjectsAsync());
-
       return { projectId, employeeIds };
     } catch (error) {
       return rejectWithValue(error.message || "Failed to assign employees.");
@@ -156,12 +137,9 @@ export const removeEmployeesAsync = createAsyncThunk(
         .delete()
         .match({ project_id: projectId })
         .in("emp_id", employeeIdsToRemove);
-
       if (error) throw error;
-
       // Fetch updated project data
       dispatch(fetchProjectsAsync());
-
       return { projectId, employeeIdsToRemove };
     } catch (error) {
       return rejectWithValue(error.message || "Failed to remove employees.");
@@ -178,17 +156,87 @@ export const searchProjectsAsync = createAsyncThunk(
         .from("Projects")
         .select("id, name, project_employee ( emp_id, Employee ( id, name ) )")
         .ilike("name", `%${searchTerm}%`);
-
       if (error) throw error;
-
       const formattedData = data.map((project) => ({
         ...project,
         employees: project.project_employee.map(pe => pe.Employee) || [],
       }));
-
       return formattedData;
     } catch (error) {
       return rejectWithValue(error.message || "Failed to search projects.");
+    }
+  }
+);
+
+// Async thunk for setting up real-time subscriptions
+export const setupRealtimeSubscriptions = createAsyncThunk(
+  "projects/setupRealtimeSubscriptions",
+  async (_, { dispatch }) => {
+    // Subscribe to Projects table changes
+    const projectSubscription = supabase
+      .channel('project-changes')
+      .on('postgres_changes', {
+        event: '*',  // Listen to all events (INSERT, UPDATE, DELETE)
+        schema: 'public',
+        table: 'Projects'
+      }, (payload) => {
+        console.log('Project change received:', payload);
+        // Handle the different event types
+        if (payload.eventType === 'INSERT') {
+          dispatch(handleProjectInserted(payload.new));
+        } else if (payload.eventType === 'UPDATE') {
+          dispatch(handleProjectUpdated(payload.new));
+        } else if (payload.eventType === 'DELETE') {
+          dispatch(handleProjectDeleted(payload.old.id));
+        }
+      })
+      .subscribe();
+
+    // Subscribe to project_employee table changes
+    const projectEmployeeSubscription = supabase
+      .channel('project-employee-changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'project_employee'
+      }, (payload) => {
+        console.log('Project-Employee relation change received:', payload);
+        // When project assignments change, fetch the updated project data
+        if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
+          dispatch(fetchProjectWithEmployees(payload.new?.project_id || payload.old?.project_id));
+        }
+      })
+      .subscribe();
+
+    // Return the subscriptions so they can be unsubscribed later if needed
+    return { projectSubscription, projectEmployeeSubscription };
+  }
+);
+
+// Fetch a single project with employees (used for real-time updates)
+export const fetchProjectWithEmployees = createAsyncThunk(
+  "projects/fetchProjectWithEmployees",
+  async (projectId, { rejectWithValue }) => {
+    try {
+      const { data, error } = await supabase
+        .from("Projects")
+        .select(`
+          id,
+          name,
+          project_employee (
+            emp_id,
+            Employee ( id, name )
+          )
+        `)
+        .eq("id", projectId)
+        .single();
+      if (error) throw error;
+      return {
+        ...data,
+        employees: data.project_employee.map(pe => pe.Employee) || [],
+      };
+    } catch (error) {
+      return rejectWithValue(error.message || "Failed to fetch project with employees");
     }
   }
 );
@@ -200,7 +248,9 @@ const initialState = {
   error: null,
   successMessage: "",
   searchResults: [],
-  isSearching: false
+  isSearching: false,
+  realtimeSubscriptions: null,
+  realtimeConnected: false
 };
 
 const projectSlice = createSlice({
@@ -214,6 +264,29 @@ const projectSlice = createSlice({
     resetSearch: (state) => {
       state.searchResults = [];
       state.isSearching = false;
+    },
+    handleProjectInserted: (state, action) => {
+      // Check if project already exists to avoid duplicates
+      const projectExists = state.projects.some(proj => proj.id === action.payload.id);
+      if (!projectExists) {
+        state.projects.push({
+          ...action.payload,
+          employees: []
+        });
+        state.successMessage = `Project "${action.payload.name}" added by another user!`;
+      }
+    },
+    handleProjectUpdated: (state, action) => {
+      state.projects = state.projects.map(proj =>
+        proj.id === action.payload.id
+          ? { ...action.payload, employees: proj.employees }
+          : proj
+      );
+      state.successMessage = `Project "${action.payload.name}" updated by another user!`;
+    },
+    handleProjectDeleted: (state, action) => {
+      state.projects = state.projects.filter(proj => proj.id !== action.payload);
+      state.successMessage = "A project was deleted by another user!";
     }
   },
   extraReducers: (builder) => {
@@ -231,7 +304,6 @@ const projectSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      
       // Fetch employees cases
       .addCase(fetchEmployeesAsync.pending, (state) => {
         state.loading = true;
@@ -245,7 +317,6 @@ const projectSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      
       // Add project cases
       .addCase(addProjectAsync.pending, (state) => {
         state.loading = true;
@@ -261,7 +332,6 @@ const projectSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      
       // Delete project cases
       .addCase(deleteProjectAsync.pending, (state) => {
         state.loading = true;
@@ -277,7 +347,6 @@ const projectSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      
       // Update project cases
       .addCase(updateProjectAsync.pending, (state) => {
         state.loading = true;
@@ -298,7 +367,6 @@ const projectSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      
       // Assign employees cases
       .addCase(assignEmployeesAsync.pending, (state) => {
         state.loading = true;
@@ -313,7 +381,6 @@ const projectSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      
       // Remove employees cases
       .addCase(removeEmployeesAsync.pending, (state) => {
         state.loading = true;
@@ -328,7 +395,6 @@ const projectSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      
       // Search projects cases
       .addCase(searchProjectsAsync.pending, (state) => {
         state.isSearching = true;
@@ -341,8 +407,21 @@ const projectSlice = createSlice({
       .addCase(searchProjectsAsync.rejected, (state, action) => {
         state.isSearching = false;
         state.error = action.payload;
+      })
+      // Handle real-time subscriptions
+      .addCase(setupRealtimeSubscriptions.fulfilled, (state, action) => {
+        state.realtimeSubscriptions = action.payload;
+        state.realtimeConnected = true;
+      })
+      // Handle fetchProjectWithEmployees (for real-time updates)
+      .addCase(fetchProjectWithEmployees.fulfilled, (state, action) => {
+        // Update the project in the state
+        state.projects = state.projects.map(proj =>
+          proj.id === action.payload.id ? action.payload : proj
+        );
+        state.successMessage = `Project assignments for "${action.payload.name}" were updated by another user!`;
       });
-  },
+  }
 });
 
 export const { resetMessages, resetSearch } = projectSlice.actions;

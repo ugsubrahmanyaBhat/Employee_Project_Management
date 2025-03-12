@@ -13,7 +13,8 @@ import {
   setShowAssignForm,
   setShowRemoveForm,
   searchEmployees,
-  clearMessages
+  clearMessages,
+  setupRealtimeSubscriptions
 } from "../features/employeeSlice.js";
 
 export default function Employee() {
@@ -27,11 +28,19 @@ export default function Employee() {
     successMessage,
     showEditForm,
     showAssignForm,
-    showRemoveForm
+    showRemoveForm,
+    realtimeConnected
   } = useSelector(state => state.employees);
 
   const [showOptions, setShowOptions] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Set up real-time subscriptions on component mount
+  useEffect(() => {
+    if (!realtimeConnected) {
+      dispatch(setupRealtimeSubscriptions());
+    }
+  }, [dispatch, realtimeConnected]);
 
   useEffect(() => {
     dispatch(fetchEmployees());
@@ -93,6 +102,14 @@ export default function Employee() {
           <span>Add Employee</span>
         </Link>
       </nav>
+
+      {/* Realtime Status */}
+      <div className="mt-4 flex items-center">
+        <div className={`h-3 w-3 rounded-full mr-2 ${realtimeConnected ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+        <span className="text-sm text-gray-400">
+          {realtimeConnected ? 'Realtime Connected' : 'Connecting to realtime...'}
+        </span>
+      </div>
 
       {/* Search Bar */}
       <div className="mt-6">
